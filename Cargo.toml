@@ -53,3 +53,6 @@ base64 = "0.22"
 zstd = "0.13"
 # Keypair generation in bin/setup.rs keygen (OS entropy; no rand stack).
 getrandom = "0.2"
+
+[dev-dependencies]
+hex = "0.4"
