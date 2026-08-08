@@ -63,3 +63,7 @@ hex = "0.4"
 [[bin]]
 name = "drv-capture"
 path = "bin/capture.rs"
+
+[[bin]]
+name = "drv-probe"
+path = "bin/probe.rs"
