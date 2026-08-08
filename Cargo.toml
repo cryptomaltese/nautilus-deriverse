@@ -20,6 +20,9 @@ crate-type = ["rlib"]
 [dependencies]
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
+# Lights nautilus-common's `live` feature (get_data_event_sender/get_runtime)
+# — mirrors the pacifica adapter's exact dep set (plan-drift note, recorded).
+nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 
