@@ -59,3 +59,7 @@ getrandom = "0.2"
 
 [dev-dependencies]
 hex = "0.4"
+
+[[bin]]
+name = "drv-capture"
+path = "bin/capture.rs"
