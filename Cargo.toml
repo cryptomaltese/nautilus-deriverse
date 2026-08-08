@@ -1,0 +1,55 @@
+# Bespoke Nautilus Trader venue adapter for Deriverse (fully on-chain Solana
+# CLOB — no gateway REST/WS). Spec:
+# sessions/trading/docs/superpowers/specs/2026-08-07-deriverse-adapter-design.md
+#
+# Transport family: market data = Solana RPC accountSubscribe on the
+# instrument account; orders = signed v0 transactions; fills = own-tx logs by
+# signature polling. Byte SoT: drv-models (pinned tag, https URL — never ssh).
+# Conformance gate: golden fixtures generated once from the @deriverse/kit
+# clone (kit 1.0.74 / contract v0.2.74), bytes checked in under tests/fixtures.
+[package]
+name = "nautilus-deriverse"
+version.workspace = true
+edition.workspace = true
+description = "Deriverse on-chain CLOB integration adapter for the Nautilus trading engine (bespoke)"
+
+[lib]
+name = "nautilus_deriverse"
+crate-type = ["rlib"]
+
+[dependencies]
+nautilus-common = { workspace = true }
+nautilus-core = { workspace = true }
+nautilus-model = { workspace = true }
+nautilus-network = { workspace = true }
+
+anyhow = { workspace = true }
+async-trait = "0.1"
+log = { workspace = true }
+env_logger = "0.11"
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+tokio-util = { workspace = true }
+futures-util = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Venue byte SoT — account/log/instruction structs are consumed, never
+# re-declared (spec §1.2). Pinned release tag over https.
+drv-models = { git = "https://github.com/deriverse/drv-smart-contract-common", tag = "v0.2.74", package = "drv-models" }
+bytemuck = { version = "1", features = ["derive"] }
+
+# PDA derivation only (unifies with drv-models' solana-pubkey 3.0.0). The v0
+# transaction wire format is hand-rolled in tx/build.rs and golden-gated —
+# no solana-sdk / solana-message dependency.
+solana-pubkey = { version = "3.0.0", features = ["curve25519", "std"] }
+
+# ed25519 tx signing (same crate+version family as the pacifica adapter).
+ed25519-dalek = "2.2.0"
+bs58 = "0.5"
+base64 = "0.22"
+# accountSubscribe / getAccountInfo use base64+zstd (spec §2.1; ~0.45 MB/frame
+# vs ~1.03 MB plain base64 — feasibility §7).
+zstd = "0.13"
+# Keypair generation in bin/setup.rs keygen (OS entropy; no rand stack).
+getrandom = "0.2"
