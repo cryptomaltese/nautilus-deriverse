@@ -64,6 +64,11 @@ impl DataClientFactory for DeriverseDataClientFactory {
                 )
             })?
             .clone();
+        // F1: the shared handle may be Default-constructed (threshold 0) —
+        // plumb the config's staleness threshold into it BEFORE the client
+        // (and its watchdog) starts reading it.
+        self.freshness
+            .set_staleness_threshold_slots(cfg.staleness_threshold_slots);
         let client = DeriverseDataClient::new(ClientId::from(name), cfg)?
             .with_freshness(self.freshness.clone());
         Ok(Box::new(client))
@@ -90,5 +95,32 @@ mod tests {
         assert_eq!(factory.freshness().heartbeat_slot(), 123);
         assert_eq!(factory.name(), "DERIVERSE");
         assert_eq!(factory.config_type(), "DeriverseDataClientConfig");
+    }
+
+    #[test]
+    fn factory_created_client_freshness_carries_config_threshold() {
+        use nautilus_common::{cache::Cache, clock::TestClock};
+
+        // Default factory handle starts at threshold 0 — create() must
+        // overwrite it with the config's value (review F1).
+        let factory = DeriverseDataClientFactory::default();
+        assert_eq!(factory.freshness().staleness_threshold_slots(), 0);
+        let cfg = DeriverseDataClientConfig {
+            staleness_threshold_slots: 77,
+            ..Default::default()
+        };
+        let cache = CacheView::new(Rc::new(RefCell::new(Cache::default())));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let client = factory
+            .create("DERIVERSE-TEST", &cfg, cache, clock)
+            .expect("create");
+        drop(client);
+        // The factory handle IS the client's handle (shared Arc), so this
+        // read is what the client's watchdog sees.
+        assert_eq!(
+            factory.freshness().staleness_threshold_slots(),
+            77,
+            "factory-created client's freshness must carry the config threshold, not 0"
+        );
     }
 }

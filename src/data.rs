@@ -124,6 +124,16 @@ impl FeedFreshness {
         self.inner.staleness_threshold_slots.load(Ordering::Relaxed)
     }
 
+    /// Store the configured staleness threshold into this (shared) handle.
+    /// The factory calls this in `create()` — a `Default`-constructed shared
+    /// handle otherwise carries threshold 0 and the watchdog hair-triggers
+    /// DEGRADED (review F1).
+    pub fn set_staleness_threshold_slots(&self, staleness_threshold_slots: u64) {
+        self.inner
+            .staleness_threshold_slots
+            .store(staleness_threshold_slots, Ordering::Relaxed);
+    }
+
     pub fn set_degraded(&self, id: InstrumentId, degraded: bool) {
         self.inner.degraded.write().expect("freshness lock").insert(id, degraded);
     }

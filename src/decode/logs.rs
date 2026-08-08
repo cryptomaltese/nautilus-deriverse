@@ -95,7 +95,6 @@ pub fn decode_program_data_line(line: &str) -> Option<DeriverseLogEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::Engine as _;
 
     fn line_for<T: bytemuck::Pod>(report: &T) -> String {
         format!(

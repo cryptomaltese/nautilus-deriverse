@@ -107,6 +107,10 @@ async function main() {
   const newSpotIx = await spot.buildNewSpotOrderInstruction(ctx, newSpotArgs, instr);
   const newSpotIocArgs = { side: 1, instrId: 0, price: 151.5, qty: 0.033, ioc: 1, orderType: 0, edgePrice: 0 };
   const newSpotIocIx = await spot.buildNewSpotOrderInstruction(ctx, newSpotIocArgs, instr);
+  // Mixed control (review F6): side=0 WITH ioc=1 — decorrelates the side and
+  // ioc bytes, which the base (0,0) and ioc (1,1) goldens leave coupled.
+  const newSpotMixedArgs = { side: 0, instrId: 0, price: 152.25, qty: 0.033, ioc: 1, orderType: 0, edgePrice: 0 };
+  const newSpotMixedIx = await spot.buildNewSpotOrderInstruction(ctx, newSpotMixedArgs, instr);
   const cancelArgs = { side: 0, instrId: 0, orderId: 987654321012345 };
   const cancelIx = await spot.buildSpotOrderCancelInstruction(ctx, cancelArgs, instr);
   const rpcGetSlot = async () => BigInt(LUT_SLOT + 1); // builder does slot-1
@@ -195,6 +199,7 @@ async function main() {
     instructions: {
       new_spot_order: { args: newSpotArgs, ...dumpIx(newSpotIx) },
       new_spot_order_ioc: { args: newSpotIocArgs, ...dumpIx(newSpotIocIx) },
+      new_spot_order_mixed: { args: newSpotMixedArgs, ...dumpIx(newSpotMixedIx) },
       spot_order_cancel: { args: cancelArgs, ...dumpIx(cancelIx) },
       deposit_exists: { args: depExistsArgs, ...dumpIx(depExistsIx) },
       deposit_first: { args: depExistsArgs, ...dumpIx(depFirstIx) },

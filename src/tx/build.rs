@@ -27,7 +27,7 @@ use crate::common::consts::{
     TOKEN_PROGRAM,
 };
 use crate::tx::accounts::{
-    associated_token_address, account_by_tag, instr_account_by_tag, lookup_table_address,
+    associated_token_address, instr_account_by_tag, lookup_table_address,
     program_token_account, VenueContext,
 };
 

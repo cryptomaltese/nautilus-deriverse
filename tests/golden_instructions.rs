@@ -114,6 +114,27 @@ fn new_spot_order_matches_kit() {
 }
 
 #[test]
+fn new_spot_order_mixed_bid_ioc_matches_kit() {
+    // Mixed control (review F6): side=0 WITH ioc=1 decorrelates the side and
+    // ioc bytes, which the base (0,0) and ioc (1,1) goldens leave coupled.
+    let g = goldens();
+    let ctx = fixture_ctx(&g);
+    let a = &g["instructions"]["new_spot_order_mixed"]["args"];
+    let ix = builder(&ctx)
+        .new_spot_order_ix(&NewSpotOrderArgs {
+            instr_id: 0,
+            side: a["side"].as_u64().unwrap() as u8,
+            ioc: a["ioc"].as_u64().unwrap() as u8,
+            order_type: a["orderType"].as_u64().unwrap() as u8,
+            price: a["price"].as_f64().unwrap(),
+            qty: a["qty"].as_f64().unwrap(),
+            edge_price: a["edgePrice"].as_f64().unwrap(),
+        })
+        .unwrap();
+    assert_ix_matches(&ix, &g["instructions"]["new_spot_order_mixed"]);
+}
+
+#[test]
 fn spot_order_cancel_matches_kit() {
     let g = goldens();
     let ctx = fixture_ctx(&g);

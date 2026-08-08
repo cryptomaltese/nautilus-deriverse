@@ -227,6 +227,91 @@
         }
       ]
     },
+    "new_spot_order_mixed": {
+      "args": {
+        "side": 0,
+        "instrId": 0,
+        "price": 152.25,
+        "qty": 0.033,
+        "ioc": 1,
+        "orderType": 0,
+        "edgePrice": 0
+      },
+      "program": "DRVSpZ2YUYYKgZP8XtLhAGtT1zYSCKzeHfb4DgRnrgqD",
+      "data_hex": "0c0100000000000080a2ce7223000000408af701000000000000000000000000",
+      "accounts": [
+        {
+          "address": "GmaDrppBC7P5ARKV8g3djiwP89vz1jLK23V2GBjuAEGB",
+          "signer": true,
+          "writable": false
+        },
+        {
+          "address": "C2cdMyJbyBnqNc5AS4iziLGWcnhgekRNjivKvi1skXGb",
+          "signer": false,
+          "writable": false
+        },
+        {
+          "address": "6LhdUPpVxP4RYAvsfVxU5jLrDk4HDVgGFsh8YcbUttkp",
+          "signer": false,
+          "writable": true
+        },
+        {
+          "address": "6x4xBuYZVf6kuYTdyZPELeVZJq4RyECYeTH6UPi461a9",
+          "signer": false,
+          "writable": true
+        },
+        {
+          "address": "24CTLLCka7XY5qTChUCRaZ2NvbY6L2sa4fmNkDH3bMgk",
+          "signer": false,
+          "writable": true
+        },
+        {
+          "address": "2xBJxQpYadbwAvtrBoerXgGxozdqKFHELcNiPwFBuZJj",
+          "signer": false,
+          "writable": true
+        },
+        {
+          "address": "EMejqHuR7YLVzZAj4r39woQ7u5txVVtpXu4QozT98z9M",
+          "signer": false,
+          "writable": true
+        },
+        {
+          "address": "GbrrExFecBPcJGrAS7yh7EUT8wZcBpfoxxjYaXueNRX1",
+          "signer": false,
+          "writable": true
+        },
+        {
+          "address": "zJFzMUaFgzBRBUgYq4UA9HQtEi7QoDvT3QRW9vW1EDk",
+          "signer": false,
+          "writable": true
+        },
+        {
+          "address": "7CpnJEMpMpiHNJNe56WspKt7XXTdXuwN6nzY4iLJ7mdN",
+          "signer": false,
+          "writable": true
+        },
+        {
+          "address": "2RJD1KnDRGEkvuFfAGrJ7PD28LRE9LRDjZznDywagzmr",
+          "signer": false,
+          "writable": true
+        },
+        {
+          "address": "E1JSaJ4QES8qJ7cemR7J6b8qi97wvZkULkTy38GD8kSp",
+          "signer": false,
+          "writable": true
+        },
+        {
+          "address": "CZL49schRiUQu7DzVqvV787d1dSHC2E7eGr5hCEePCfw",
+          "signer": false,
+          "writable": false
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "signer": false,
+          "writable": false
+        }
+      ]
+    },
     "spot_order_cancel": {
       "args": {
         "side": 0,
