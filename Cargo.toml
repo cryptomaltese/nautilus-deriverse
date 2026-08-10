@@ -67,3 +67,7 @@ path = "bin/capture.rs"
 [[bin]]
 name = "drv-probe"
 path = "bin/probe.rs"
+
+[[bin]]
+name = "drv-setup"
+path = "bin/setup.rs"
