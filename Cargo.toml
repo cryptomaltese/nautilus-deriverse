@@ -71,3 +71,7 @@ path = "bin/probe.rs"
 [[bin]]
 name = "drv-setup"
 path = "bin/setup.rs"
+
+[[bin]]
+name = "drv-spot-order"
+path = "bin/spot_order.rs"
