@@ -13,11 +13,11 @@ use crate::common::enums::Commitment;
 
 #[derive(Clone, Debug)]
 pub struct DeriverseDataClientConfig {
-    pub rpc_url: Option<String>,        // default DEFAULT_RPC_HTTP_URL
-    pub ws_url: Option<String>,         // default DEFAULT_RPC_WS_URL
-    pub program_id: Option<String>,     // default PROGRAM_ID (mainnet)
-    pub program_version: Option<u32>,   // default PROGRAM_VERSION (mainnet)
-    pub commitment: Commitment,         // default Confirmed
+    pub rpc_url: Option<String>,      // default DEFAULT_RPC_HTTP_URL
+    pub ws_url: Option<String>,       // default DEFAULT_RPC_WS_URL
+    pub program_id: Option<String>,   // default PROGRAM_ID (mainnet)
+    pub program_version: Option<u32>, // default PROGRAM_VERSION (mainnet)
+    pub commitment: Commitment,       // default Confirmed
     pub http_timeout_secs: u64,
     pub reconcile_interval_secs: u64,   // §3 REST reconcile timer
     pub staleness_threshold_slots: u64, // §3 alarm
@@ -41,15 +41,21 @@ impl Default for DeriverseDataClientConfig {
 impl DeriverseDataClientConfig {
     #[must_use]
     pub fn effective_rpc_url(&self) -> String {
-        self.rpc_url.clone().unwrap_or_else(|| DEFAULT_RPC_HTTP_URL.to_string())
+        self.rpc_url
+            .clone()
+            .unwrap_or_else(|| DEFAULT_RPC_HTTP_URL.to_string())
     }
     #[must_use]
     pub fn effective_ws_url(&self) -> String {
-        self.ws_url.clone().unwrap_or_else(|| DEFAULT_RPC_WS_URL.to_string())
+        self.ws_url
+            .clone()
+            .unwrap_or_else(|| DEFAULT_RPC_WS_URL.to_string())
     }
     #[must_use]
     pub fn effective_program_id(&self) -> String {
-        self.program_id.clone().unwrap_or_else(|| PROGRAM_ID.to_string())
+        self.program_id
+            .clone()
+            .unwrap_or_else(|| PROGRAM_ID.to_string())
     }
     #[must_use]
     pub fn effective_program_version(&self) -> u32 {
@@ -59,19 +65,19 @@ impl DeriverseDataClientConfig {
 
 #[derive(Clone, Debug)]
 pub struct DeriverseExecClientConfig {
-    pub keypair_path: Option<PathBuf>,  // secrets dir; value never logged
+    pub keypair_path: Option<PathBuf>, // secrets dir; value never logged
     pub rpc_url: Option<String>,
     pub ws_url: Option<String>,
-    pub program_id: Option<String>,     // default PROGRAM_ID (mainnet)
-    pub program_version: Option<u32>,   // default PROGRAM_VERSION (mainnet)
+    pub program_id: Option<String>,   // default PROGRAM_ID (mainnet)
+    pub program_version: Option<u32>, // default PROGRAM_VERSION (mainnet)
     pub commitment: Commitment,
     pub http_timeout_secs: u64,
     pub priority_fee_microlamports: u64,
-    pub compute_unit_limit: u32,        // budget includes crank CU (§4)
+    pub compute_unit_limit: u32, // budget includes crank CU (§4)
     pub blockhash_refresh_secs: u64,
     pub signature_poll_interval_ms: u64,
-    pub market_slippage_bps: u32,       // → edge_price
-    pub leverage: Option<u8>,           // 1–100; None = venue max (0)
+    pub market_slippage_bps: u32, // → edge_price
+    pub leverage: Option<u8>,     // 1–100; None = venue max (0)
 }
 
 impl Default for DeriverseExecClientConfig {
@@ -97,15 +103,21 @@ impl Default for DeriverseExecClientConfig {
 impl DeriverseExecClientConfig {
     #[must_use]
     pub fn effective_rpc_url(&self) -> String {
-        self.rpc_url.clone().unwrap_or_else(|| DEFAULT_RPC_HTTP_URL.to_string())
+        self.rpc_url
+            .clone()
+            .unwrap_or_else(|| DEFAULT_RPC_HTTP_URL.to_string())
     }
     #[must_use]
     pub fn effective_ws_url(&self) -> String {
-        self.ws_url.clone().unwrap_or_else(|| DEFAULT_RPC_WS_URL.to_string())
+        self.ws_url
+            .clone()
+            .unwrap_or_else(|| DEFAULT_RPC_WS_URL.to_string())
     }
     #[must_use]
     pub fn effective_program_id(&self) -> String {
-        self.program_id.clone().unwrap_or_else(|| PROGRAM_ID.to_string())
+        self.program_id
+            .clone()
+            .unwrap_or_else(|| PROGRAM_ID.to_string())
     }
     #[must_use]
     pub fn effective_program_version(&self) -> u32 {

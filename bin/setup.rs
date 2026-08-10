@@ -21,15 +21,16 @@ use solana_pubkey::Pubkey;
 use nautilus_deriverse::common::consts::{TOKEN_PROGRAM, USDC_MINT};
 use nautilus_deriverse::config::DeriverseExecClientConfig;
 use nautilus_deriverse::rpc::{DeriverseRpcClient, SolanaRpc};
-use nautilus_deriverse::tx::accounts::{
-    associated_token_address, resolve_directory, VenueContext,
-};
+use nautilus_deriverse::tx::accounts::{associated_token_address, resolve_directory, VenueContext};
 use nautilus_deriverse::tx::build::{DepositArgs, TxBuilder};
 use nautilus_deriverse::tx::send::{BlockhashCache, SubmitOutcome, TxSender};
 
 fn arg(name: &str) -> Option<String> {
     let args: Vec<String> = std::env::args().collect();
-    args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
+    args.iter()
+        .position(|a| a == name)
+        .and_then(|i| args.get(i + 1))
+        .cloned()
 }
 
 fn required(name: &str) -> anyhow::Result<String> {
@@ -69,7 +70,10 @@ async fn context(
 
 /// SPL token account amount (u64 LE at offset 64 of the 165-byte layout).
 async fn ata_balance(rpc: &DeriverseRpcClient, ata: &Pubkey) -> anyhow::Result<Option<u64>> {
-    match rpc.get_account_info(&ata.to_string(), Some((64, 8))).await? {
+    match rpc
+        .get_account_info(&ata.to_string(), Some((64, 8)))
+        .await?
+    {
         None => Ok(None),
         Some((_slot, bytes)) => {
             anyhow::ensure!(bytes.len() == 8, "token amount slice");
@@ -123,7 +127,8 @@ async fn main() -> anyhow::Result<()> {
             let ctx = context(&cfg, &rpc, signer).await?;
             let sol = rpc.get_balance(&signer.to_string()).await? as f64 / 1e9;
             let usdc_mint = Pubkey::from_str(USDC_MINT)?;
-            let ata = associated_token_address(&signer, &Pubkey::from_str(TOKEN_PROGRAM)?, &usdc_mint);
+            let ata =
+                associated_token_address(&signer, &Pubkey::from_str(TOKEN_PROGRAM)?, &usdc_mint);
             let usdc = ata_balance(&rpc, &ata).await?;
             let client_primary_exists = rpc
                 .get_account_info(&ctx.client_primary.to_string(), Some((0, 8)))
@@ -137,12 +142,19 @@ async fn main() -> anyhow::Result<()> {
             }
             println!(
                 "client_primary: {}",
-                if client_primary_exists { "EXISTS" } else { "MISSING (setup will create it)" }
+                if client_primary_exists {
+                    "EXISTS"
+                } else {
+                    "MISSING (setup will create it)"
+                }
             );
         }
         "init-deposit" => {
             let usdc_amount: f64 = required("--usdc")?.parse()?;
-            anyhow::ensure!(usdc_amount > 0.0 && usdc_amount <= 11.0, "M1a budget cap: 0 < usdc <= 11");
+            anyhow::ensure!(
+                usdc_amount > 0.0 && usdc_amount <= 11.0,
+                "M1a budget cap: 0 < usdc <= 11"
+            );
             let key = load_keypair(&keypair_path)?;
             let signer = pubkey_of(&key);
             let rpc = Arc::new(DeriverseRpcClient::new(
@@ -153,9 +165,17 @@ async fn main() -> anyhow::Result<()> {
             )?);
             let ctx = context(&cfg, rpc.as_ref(), signer).await?;
             // USDC token id = instr 0's crncy token (no hardcoded registry ids).
-            let instr0 = ctx.dir.instruments.get(&0).ok_or_else(|| anyhow::anyhow!("no instr 0"))?;
+            let instr0 = ctx
+                .dir
+                .instruments
+                .get(&0)
+                .ok_or_else(|| anyhow::anyhow!("no instr 0"))?;
             let token_id = instr0.crncy_token_id;
-            let token = ctx.dir.tokens.get(&token_id).ok_or_else(|| anyhow::anyhow!("no crncy token"))?;
+            let token = ctx
+                .dir
+                .tokens
+                .get(&token_id)
+                .ok_or_else(|| anyhow::anyhow!("no crncy token"))?;
             anyhow::ensure!(
                 token.mint == Pubkey::from_str(USDC_MINT)?,
                 "instr 0 crncy mint is not USDC — refusing (got {})",
@@ -165,7 +185,11 @@ async fn main() -> anyhow::Result<()> {
                 .get_account_info(&ctx.client_primary.to_string(), Some((0, 8)))
                 .await?
                 .is_some();
-            let lut_slot = if exists { 0 } else { (rpc.get_slot().await? - 1) as u32 };
+            let lut_slot = if exists {
+                0
+            } else {
+                (rpc.get_slot().await? - 1) as u32
+            };
             let builder = TxBuilder {
                 ctx: &ctx,
                 compute_unit_limit: cfg.compute_unit_limit,
@@ -183,8 +207,14 @@ async fn main() -> anyhow::Result<()> {
             let (blockhash, lvbh) = blockhash_cache.get().await?;
             // First deposit touches no instrument accounts ⇒ no LUTs needed.
             let tx = builder.build_signed_tx(&[ix], &key, &blockhash, &[])?;
-            println!("sending deposit (exists={exists}) sig={}", tx.signature_base58());
-            let sender = TxSender { rpc: Arc::clone(&rpc), poll_interval_ms: cfg.signature_poll_interval_ms };
+            println!(
+                "sending deposit (exists={exists}) sig={}",
+                tx.signature_base58()
+            );
+            let sender = TxSender {
+                rpc: Arc::clone(&rpc),
+                poll_interval_ms: cfg.signature_poll_interval_ms,
+            };
             match sender.submit_and_confirm(&tx, lvbh).await? {
                 SubmitOutcome::Confirmed { slot, logs } => {
                     println!("CONFIRMED at slot {slot}; {} log lines", logs.len());
@@ -192,7 +222,9 @@ async fn main() -> anyhow::Result<()> {
                         println!("  {line}");
                     }
                 }
-                SubmitOutcome::Expired => anyhow::bail!("deposit tx EXPIRED — safe to retry once, then stop"),
+                SubmitOutcome::Expired => {
+                    anyhow::bail!("deposit tx EXPIRED — safe to retry once, then stop")
+                }
                 SubmitOutcome::Rejected { reason } => anyhow::bail!("deposit REJECTED: {reason}"),
             }
         }

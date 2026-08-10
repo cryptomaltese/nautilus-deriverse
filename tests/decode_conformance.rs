@@ -24,12 +24,23 @@ fn live_fixture_matches_kit_decode() {
     );
 
     // Full ladder RAW equality (stronger than float compare).
-    for (side, ladder) in [("spot_bids", &snap.spot_bids), ("spot_asks", &snap.spot_asks)] {
+    for (side, ladder) in [
+        ("spot_bids", &snap.spot_bids),
+        ("spot_asks", &snap.spot_asks),
+    ] {
         let want = kit[side].as_array().unwrap();
         assert_eq!(ladder.len, want.len(), "{side} depth");
         for (i, level) in want.iter().enumerate() {
-            assert_eq!(ladder.levels[i].px, level["px_raw"].as_i64().unwrap(), "{side}[{i}].px");
-            assert_eq!(ladder.levels[i].qty, level["qty_raw"].as_i64().unwrap(), "{side}[{i}].qty");
+            assert_eq!(
+                ladder.levels[i].px,
+                level["px_raw"].as_i64().unwrap(),
+                "{side}[{i}].px"
+            );
+            assert_eq!(
+                ladder.levels[i].qty,
+                level["qty_raw"].as_i64().unwrap(),
+                "{side}[{i}].qty"
+            );
         }
     }
 
@@ -38,10 +49,22 @@ fn live_fixture_matches_kit_decode() {
     let ask = snap.spot_asks.top().unwrap();
     let asset_dec = 10f64.powi(snap.header.asset_token_decs_count as i32);
     let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
-    assert!(close(bid.px as f64 / 1e9, kit["scaled_tob"]["bid_px"].as_f64().unwrap()));
-    assert!(close(ask.px as f64 / 1e9, kit["scaled_tob"]["ask_px"].as_f64().unwrap()));
-    assert!(close(bid.qty as f64 / asset_dec, kit["scaled_tob"]["bid_qty"].as_f64().unwrap()));
-    assert!(close(ask.qty as f64 / asset_dec, kit["scaled_tob"]["ask_qty"].as_f64().unwrap()));
+    assert!(close(
+        bid.px as f64 / 1e9,
+        kit["scaled_tob"]["bid_px"].as_f64().unwrap()
+    ));
+    assert!(close(
+        ask.px as f64 / 1e9,
+        kit["scaled_tob"]["ask_px"].as_f64().unwrap()
+    ));
+    assert!(close(
+        bid.qty as f64 / asset_dec,
+        kit["scaled_tob"]["bid_qty"].as_f64().unwrap()
+    ));
+    assert!(close(
+        ask.qty as f64 / asset_dec,
+        kit["scaled_tob"]["ask_qty"].as_f64().unwrap()
+    ));
 
     // Header best_bid/best_ask are cross-checks of ladder level 0 (§1.3).
     assert_eq!(bid.px, h["best_bid_raw"].as_i64().unwrap());

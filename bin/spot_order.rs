@@ -27,7 +27,10 @@ use nautilus_deriverse::tx::send::{BlockhashCache, SubmitOutcome, TxLedger, TxRe
 
 fn arg(name: &str) -> Option<String> {
     let args: Vec<String> = std::env::args().collect();
-    args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
+    args.iter()
+        .position(|a| a == name)
+        .and_then(|i| args.get(i + 1))
+        .cloned()
 }
 
 fn flag(name: &str) -> bool {
@@ -126,8 +129,15 @@ async fn main() -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("instr {instr_id} not found"))?
         .clone();
     // Sanity: M1a orders are USDC-quoted spot only.
-    let crncy = ctx.dir.tokens.get(&meta.crncy_token_id).ok_or_else(|| anyhow::anyhow!("no crncy"))?;
-    anyhow::ensure!(crncy.mint == Pubkey::from_str(USDC_MINT)?, "instr {instr_id} is not USDC-quoted");
+    let crncy = ctx
+        .dir
+        .tokens
+        .get(&meta.crncy_token_id)
+        .ok_or_else(|| anyhow::anyhow!("no crncy"))?;
+    anyhow::ensure!(
+        crncy.mint == Pubkey::from_str(USDC_MINT)?,
+        "instr {instr_id} is not USDC-quoted"
+    );
 
     let builder = TxBuilder {
         ctx: &ctx,
@@ -139,7 +149,10 @@ async fn main() -> anyhow::Result<()> {
         // Resolve the instrument LUT's address list live (ALT layout:
         // addresses start at byte 56, 32 B each).
         addresses: {
-            match rpc.get_account_info(&meta.lut_address.to_string(), None).await? {
+            match rpc
+                .get_account_info(&meta.lut_address.to_string(), None)
+                .await?
+            {
                 Some((_s, bytes)) if bytes.len() > 56 => bytes[56..]
                     .chunks_exact(32)
                     .map(|c| Pubkey::new_from_array(c.try_into().expect("32")))
@@ -151,31 +164,53 @@ async fn main() -> anyhow::Result<()> {
 
     let ledger: TxLedger<String> = TxLedger::new();
     let blockhash_cache = BlockhashCache::new(Arc::clone(&rpc), cfg.blockhash_refresh_secs);
-    let sender = TxSender { rpc: Arc::clone(&rpc), poll_interval_ms: cfg.signature_poll_interval_ms };
+    let sender = TxSender {
+        rpc: Arc::clone(&rpc),
+        poll_interval_ms: cfg.signature_poll_interval_ms,
+    };
 
     match cmd.as_str() {
         "place" => {
             let notional: f64 = required("--notional-usd")?.parse()?;
-            anyhow::ensure!(notional > 0.0 && notional <= 6.0, "M1a budget cap: notional <= $6");
+            anyhow::ensure!(
+                notional > 0.0 && notional <= 6.0,
+                "M1a budget cap: notional <= $6"
+            );
             let marketable = flag("--marketable");
             let ioc = flag("--ioc") || marketable;
-            let offset_pct: f64 = arg("--offset-pct").unwrap_or_else(|| "-30".into()).parse()?;
+            let offset_pct: f64 = arg("--offset-pct")
+                .unwrap_or_else(|| "-30".into())
+                .parse()?;
             // Live TOB for pricing.
             let (slot, bytes) = rpc
                 .get_account_info(&meta.account.to_string(), Some((0, 2344)))
                 .await?
                 .ok_or_else(|| anyhow::anyhow!("instrument account missing"))?;
             let snap = decode_instr_account(&bytes, slot, cfg.effective_program_version())?;
-            let bid = snap.spot_bids.top().ok_or_else(|| anyhow::anyhow!("empty bid ladder"))?;
-            let ask = snap.spot_asks.top().ok_or_else(|| anyhow::anyhow!("empty ask ladder"))?;
+            let bid = snap
+                .spot_bids
+                .top()
+                .ok_or_else(|| anyhow::anyhow!("empty bid ladder"))?;
+            let ask = snap
+                .spot_asks
+                .top()
+                .ok_or_else(|| anyhow::anyhow!("empty ask ladder"))?;
             let (bid_px, ask_px) = (bid.px as f64 / DF as f64, ask.px as f64 / DF as f64);
             let price = if marketable {
                 // Cross by 1%: a bid lifts the ask, an ask hits the bid.
-                if side == 0 { ask_px * 1.01 } else { bid_px * 0.99 }
+                if side == 0 {
+                    ask_px * 1.01
+                } else {
+                    bid_px * 0.99
+                }
             } else {
                 // Off-market by offset_pct from own-side TOB (negative =
                 // below for bids; mirrored above for asks).
-                if side == 0 { bid_px * (1.0 + offset_pct / 100.0) } else { ask_px * (1.0 - offset_pct / 100.0) }
+                if side == 0 {
+                    bid_px * (1.0 + offset_pct / 100.0)
+                } else {
+                    ask_px * (1.0 - offset_pct / 100.0)
+                }
             };
             let step = 10f64.powi(-(meta.asset_decs.min(9) as i32));
             let qty = ((notional / price) / step).round() * step;
@@ -216,17 +251,25 @@ async fn main() -> anyhow::Result<()> {
                         println!("IOC did not fill (book moved) — nothing rests, safe to re-run");
                     }
                     if !ioc && order_id.is_none() {
-                        anyhow::bail!("no SpotPlaceOrderReport in own logs — investigate before retry");
+                        anyhow::bail!(
+                            "no SpotPlaceOrderReport in own logs — investigate before retry"
+                        );
                     }
                 }
-                SubmitOutcome::Expired => anyhow::bail!("tx EXPIRED — nothing landed; safe to re-run once"),
+                SubmitOutcome::Expired => {
+                    anyhow::bail!("tx EXPIRED — nothing landed; safe to re-run once")
+                }
                 SubmitOutcome::Rejected { reason } => anyhow::bail!("REJECTED: {reason}"),
             }
             ledger.prune_terminal(&local_key);
         }
         "cancel" => {
             let order_id: i64 = required("--order-id")?.parse()?;
-            let ix = builder.spot_order_cancel_ix(&SpotOrderCancelArgs { instr_id, side, order_id })?;
+            let ix = builder.spot_order_cancel_ix(&SpotOrderCancelArgs {
+                instr_id,
+                side,
+                order_id,
+            })?;
             let (blockhash, lvbh) = blockhash_cache.get().await?;
             let tx = builder.build_signed_tx(&[ix], &key, &blockhash, &luts)?;
             println!("sig: {}", tx.signature_base58());

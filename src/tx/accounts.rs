@@ -14,8 +14,7 @@ use std::str::FromStr;
 use solana_pubkey::Pubkey;
 
 use crate::common::consts::{
-    ADDRESS_LOOKUP_TABLE_PROGRAM, ASSOCIATED_TOKEN_PROGRAM, DRVS_AUTHORITY_SEED,
-    INSTR_SNAPSHOT_LEN,
+    ADDRESS_LOOKUP_TABLE_PROGRAM, ASSOCIATED_TOKEN_PROGRAM, DRVS_AUTHORITY_SEED, INSTR_SNAPSHOT_LEN,
 };
 use crate::decode::instr::decode_instr_account;
 use crate::decode::token::{decode_token_state, token_decimals, token_is_2022};
@@ -33,7 +32,12 @@ pub fn derive_drvs_authority(program_id: &Pubkey) -> Pubkey {
 /// kit `account-helpers.ts::getAccountByTag` — seeds [version_le ++ tag_le,
 /// drvs_authority].
 #[must_use]
-pub fn account_by_tag(program_id: &Pubkey, version: u32, tag: u32, drvs_authority: &Pubkey) -> Pubkey {
+pub fn account_by_tag(
+    program_id: &Pubkey,
+    version: u32,
+    tag: u32,
+    drvs_authority: &Pubkey,
+) -> Pubkey {
     let mut buf = [0u8; 8];
     buf[..4].copy_from_slice(&version.to_le_bytes());
     buf[4..].copy_from_slice(&tag.to_le_bytes());
@@ -155,9 +159,18 @@ pub async fn resolve_directory<R: SolanaRpc + ?Sized>(
     version: u32,
 ) -> anyhow::Result<VenueDirectory> {
     let drvs_authority = derive_drvs_authority(program_id);
-    let root_account = account_by_tag(program_id, version, AccountType::Root as u32, &drvs_authority);
-    let community_account =
-        account_by_tag(program_id, version, AccountType::Community as u32, &drvs_authority);
+    let root_account = account_by_tag(
+        program_id,
+        version,
+        AccountType::Root as u32,
+        &drvs_authority,
+    );
+    let community_account = account_by_tag(
+        program_id,
+        version,
+        AccountType::Community as u32,
+        &drvs_authority,
+    );
 
     let mut tokens = BTreeMap::new();
     for (_pubkey, bytes) in rpc
@@ -177,7 +190,13 @@ pub async fn resolve_directory<R: SolanaRpc + ?Sized>(
         let id = u32::from_le_bytes(raw[72..76].try_into()?);
         tokens.insert(
             id,
-            VenueToken { id, mint, vault, decimals: token_decimals(&t), token2022: token_is_2022(&t) },
+            VenueToken {
+                id,
+                mint,
+                vault,
+                decimals: token_decimals(&t),
+                token2022: token_is_2022(&t),
+            },
         );
     }
     anyhow::ensure!(!tokens.is_empty(), "venue token registry came back empty");
@@ -213,7 +232,10 @@ pub async fn resolve_directory<R: SolanaRpc + ?Sized>(
             },
         );
     }
-    anyhow::ensure!(!instruments.is_empty(), "venue instrument list came back empty");
+    anyhow::ensure!(
+        !instruments.is_empty(),
+        "venue instrument list came back empty"
+    );
 
     Ok(VenueDirectory {
         program_id: *program_id,
@@ -250,7 +272,12 @@ impl VenueContext {
             AccountType::ClientCommunity as u32,
             &signer,
         );
-        Self { dir, signer, client_primary, client_community }
+        Self {
+            dir,
+            signer,
+            client_primary,
+            client_community,
+        }
     }
 }
 
@@ -288,11 +315,21 @@ mod tests {
             pk(&g["pda"]["community_account"])
         );
         assert_eq!(
-            client_account(&program_id, version, AccountType::ClientPrimary as u32, &signer),
+            client_account(
+                &program_id,
+                version,
+                AccountType::ClientPrimary as u32,
+                &signer
+            ),
             pk(&g["pda"]["client_primary"])
         );
         assert_eq!(
-            client_account(&program_id, version, AccountType::ClientCommunity as u32, &signer),
+            client_account(
+                &program_id,
+                version,
+                AccountType::ClientCommunity as u32,
+                &signer
+            ),
             pk(&g["pda"]["client_community"])
         );
         let usdc = Pubkey::from_str(USDC_MINT).unwrap();

@@ -66,17 +66,33 @@ fn fixture_ctx(g: &serde_json::Value) -> VenueContext {
 }
 
 fn builder(ctx: &VenueContext) -> TxBuilder<'_> {
-    TxBuilder { ctx, compute_unit_limit: 400_000, compute_unit_price_microlamports: 1_000 }
+    TxBuilder {
+        ctx,
+        compute_unit_limit: 400_000,
+        compute_unit_price_microlamports: 1_000,
+    }
 }
 
 fn assert_ix_matches(ix: &nautilus_deriverse::tx::build::Instruction, golden: &serde_json::Value) {
-    assert_eq!(hex::encode(&ix.data), golden["data_hex"].as_str().unwrap(), "data bytes");
+    assert_eq!(
+        hex::encode(&ix.data),
+        golden["data_hex"].as_str().unwrap(),
+        "data bytes"
+    );
     let want = golden["accounts"].as_array().unwrap();
     assert_eq!(ix.accounts.len(), want.len(), "account count");
     for (i, (got, want)) in ix.accounts.iter().zip(want).enumerate() {
         assert_eq!(got.pubkey, pk(&want["address"]), "account[{i}] address");
-        assert_eq!(got.is_signer, want["signer"].as_bool().unwrap(), "account[{i}] signer");
-        assert_eq!(got.is_writable, want["writable"].as_bool().unwrap(), "account[{i}] writable");
+        assert_eq!(
+            got.is_signer,
+            want["signer"].as_bool().unwrap(),
+            "account[{i}] signer"
+        );
+        assert_eq!(
+            got.is_writable,
+            want["writable"].as_bool().unwrap(),
+            "account[{i}] writable"
+        );
     }
 }
 
@@ -155,13 +171,23 @@ fn deposit_both_branches_match_kit() {
     let lut_slot = g["pda"]["lut_slot"].as_u64().unwrap() as u32;
     let existing = builder(&ctx)
         .deposit_ix(&DepositArgs {
-            token_id: 2, amount: 10.0, deposit_all: false, exists: true, lut_slot: 0, custom_id: 0,
+            token_id: 2,
+            amount: 10.0,
+            deposit_all: false,
+            exists: true,
+            lut_slot: 0,
+            custom_id: 0,
         })
         .unwrap();
     assert_ix_matches(&existing, &g["instructions"]["deposit_exists"]);
     let first = builder(&ctx)
         .deposit_ix(&DepositArgs {
-            token_id: 2, amount: 10.0, deposit_all: false, exists: false, lut_slot, custom_id: 0,
+            token_id: 2,
+            amount: 10.0,
+            deposit_all: false,
+            exists: false,
+            lut_slot,
+            custom_id: 0,
         })
         .unwrap();
     assert_ix_matches(&first, &g["instructions"]["deposit_first"]);
@@ -173,16 +199,25 @@ fn perp_data_bytes_match_kit() {
     let ctx = fixture_ctx(&g);
     let b = builder(&ctx);
     assert_eq!(
-        hex::encode(b.new_perp_order_data(0, 0, 0, 5, 0, 152.25, 0.033, 0.0).unwrap()),
-        g["instructions"]["new_perp_order"]["data_hex"].as_str().unwrap()
+        hex::encode(
+            b.new_perp_order_data(0, 0, 0, 5, 0, 152.25, 0.033, 0.0)
+                .unwrap()
+        ),
+        g["instructions"]["new_perp_order"]["data_hex"]
+            .as_str()
+            .unwrap()
     );
     assert_eq!(
         hex::encode(b.perp_order_cancel_data(0, 0, 987_654_321_012_345)),
-        g["instructions"]["perp_order_cancel"]["data_hex"].as_str().unwrap()
+        g["instructions"]["perp_order_cancel"]["data_hex"]
+            .as_str()
+            .unwrap()
     );
     assert_eq!(
         hex::encode(b.perp_mass_cancel_data(0)),
-        g["instructions"]["perp_mass_cancel"]["data_hex"].as_str().unwrap()
+        g["instructions"]["perp_mass_cancel"]["data_hex"]
+            .as_str()
+            .unwrap()
     );
 }
 
@@ -191,17 +226,41 @@ fn negative_control_perturbed_field_changes_bytes() {
     let g = goldens();
     let ctx = fixture_ctx(&g);
     let base = NewSpotOrderArgs {
-        instr_id: 0, side: 0, ioc: 0, order_type: 0, price: 152.25, qty: 0.033, edge_price: 0.0,
+        instr_id: 0,
+        side: 0,
+        ioc: 0,
+        order_type: 0,
+        price: 152.25,
+        qty: 0.033,
+        edge_price: 0.0,
     };
-    let golden_hex = g["instructions"]["new_spot_order"]["data_hex"].as_str().unwrap();
+    let golden_hex = g["instructions"]["new_spot_order"]["data_hex"]
+        .as_str()
+        .unwrap();
     for perturbed in [
-        NewSpotOrderArgs { price: 152.26, ..base.clone() },
-        NewSpotOrderArgs { qty: 0.034, ..base.clone() },
-        NewSpotOrderArgs { side: 1, ..base.clone() },
-        NewSpotOrderArgs { ioc: 1, ..base.clone() },
+        NewSpotOrderArgs {
+            price: 152.26,
+            ..base.clone()
+        },
+        NewSpotOrderArgs {
+            qty: 0.034,
+            ..base.clone()
+        },
+        NewSpotOrderArgs {
+            side: 1,
+            ..base.clone()
+        },
+        NewSpotOrderArgs {
+            ioc: 1,
+            ..base.clone()
+        },
     ] {
         let ix = builder(&ctx).new_spot_order_ix(&perturbed).unwrap();
-        assert_ne!(hex::encode(&ix.data), golden_hex, "perturbation must change bytes");
+        assert_ne!(
+            hex::encode(&ix.data),
+            golden_hex,
+            "perturbation must change bytes"
+        );
     }
 }
 

@@ -24,13 +24,16 @@ pub fn decode_token_state(bytes: &[u8], expected_version: u32) -> anyhow::Result
     let tag = u32::from_le_bytes(bytes[0..4].try_into()?);
     let version = u32::from_le_bytes(bytes[4..8].try_into()?);
     if tag != AccountType::Token as u32 {
-        bail!("token account tag mismatch: got {tag}, want {}", AccountType::Token as u32);
+        bail!(
+            "token account tag mismatch: got {tag}, want {}",
+            AccountType::Token as u32
+        );
     }
     if version != expected_version {
         bail!("token account version mismatch: got {version}, want {expected_version}");
     }
-    Ok(bytemuck::try_pod_read_unaligned::<TokenState>(&bytes[..TOKEN_STATE_LEN])
-        .map_err(|e| anyhow::anyhow!("token state read: {e}"))?)
+    bytemuck::try_pod_read_unaligned::<TokenState>(&bytes[..TOKEN_STATE_LEN])
+        .map_err(|e| anyhow::anyhow!("token state read: {e}"))
 }
 
 /// SPL decimals for this token (mask low byte).

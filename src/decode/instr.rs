@@ -101,14 +101,16 @@ pub fn decode_instr_account(
     let tag = read_u32(bytes, 0)?;
     let version = read_u32(bytes, 4)?;
     if tag != AccountType::Instr as u32 {
-        bail!("instr account tag mismatch: got {tag}, want {}", AccountType::Instr as u32);
+        bail!(
+            "instr account tag mismatch: got {tag}, want {}",
+            AccountType::Instr as u32
+        );
     }
     if version != expected_version {
         bail!("instr account program version mismatch: got {version}, want {expected_version}");
     }
-    let header: InstrAccountHeader =
-        bytemuck::try_pod_read_unaligned(&bytes[..INSTR_HEADER_LEN])
-            .map_err(|e| anyhow::anyhow!("instr header read: {e}"))?;
+    let header: InstrAccountHeader = bytemuck::try_pod_read_unaligned(&bytes[..INSTR_HEADER_LEN])
+        .map_err(|e| anyhow::anyhow!("instr header read: {e}"))?;
     Ok(InstrSnapshot {
         slot,
         header,
@@ -157,7 +159,10 @@ mod tests {
         assert_eq!(snap.spot_bids.len, 1);
         assert_eq!(
             snap.spot_bids.top().unwrap(),
-            Level { px: 152_250_000_000, qty: 33_000_000 }
+            Level {
+                px: 152_250_000_000,
+                qty: 33_000_000
+            }
         );
         assert_eq!(snap.spot_asks.top().unwrap().px, 152_350_000_000);
         assert_eq!(snap.perp_bids.len, 0);

@@ -85,7 +85,12 @@ fn dummy_key(g: &serde_json::Value) -> SigningKey {
 fn fixture_lut(g: &serde_json::Value) -> ResolvedLut {
     ResolvedLut {
         address: pk(&g["lut"]["address"]),
-        addresses: g["lut"]["addresses"].as_array().unwrap().iter().map(pk).collect(),
+        addresses: g["lut"]["addresses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(pk)
+            .collect(),
     }
 }
 
@@ -98,11 +103,23 @@ fn assert_signed_matches(
         .unwrap();
     if tx.message != want_msg {
         // Precise failure localization before the byte assert.
-        eprintln!("our message ({} B): {}", tx.message.len(), hex::encode(&tx.message));
-        eprintln!("kit message ({} B): {}", want_msg.len(), hex::encode(&want_msg));
+        eprintln!(
+            "our message ({} B): {}",
+            tx.message.len(),
+            hex::encode(&tx.message)
+        );
+        eprintln!(
+            "kit message ({} B): {}",
+            want_msg.len(),
+            hex::encode(&want_msg)
+        );
     }
     assert_eq!(tx.message, want_msg, "unsigned message bytes");
-    assert_eq!(tx.base64(), golden["tx_b64"].as_str().unwrap(), "signed wire tx");
+    assert_eq!(
+        tx.base64(),
+        golden["tx_b64"].as_str().unwrap(),
+        "signed wire tx"
+    );
     assert_eq!(
         tx.signature_base58(),
         golden["signature_b58"].as_str().unwrap(),
@@ -121,11 +138,22 @@ fn signed_new_spot_order_matches_kit() {
     };
     let ix = b
         .new_spot_order_ix(&NewSpotOrderArgs {
-            instr_id: 0, side: 0, ioc: 0, order_type: 0, price: 152.25, qty: 0.033, edge_price: 0.0,
+            instr_id: 0,
+            side: 0,
+            ioc: 0,
+            order_type: 0,
+            price: 152.25,
+            qty: 0.033,
+            edge_price: 0.0,
         })
         .unwrap();
     let tx = b
-        .build_signed_tx(&[ix], &dummy_key(&g), g["blockhash"].as_str().unwrap(), &[fixture_lut(&g)])
+        .build_signed_tx(
+            &[ix],
+            &dummy_key(&g),
+            g["blockhash"].as_str().unwrap(),
+            &[fixture_lut(&g)],
+        )
         .unwrap();
     assert_signed_matches(&tx, &g["signed_txs"]["new_spot_order"]);
 }
@@ -140,10 +168,19 @@ fn signed_spot_order_cancel_matches_kit() {
         compute_unit_price_microlamports: g["compute_unit_price_microlamports"].as_u64().unwrap(),
     };
     let ix = b
-        .spot_order_cancel_ix(&SpotOrderCancelArgs { instr_id: 0, side: 0, order_id: 987_654_321_012_345 })
+        .spot_order_cancel_ix(&SpotOrderCancelArgs {
+            instr_id: 0,
+            side: 0,
+            order_id: 987_654_321_012_345,
+        })
         .unwrap();
     let tx = b
-        .build_signed_tx(&[ix], &dummy_key(&g), g["blockhash"].as_str().unwrap(), &[fixture_lut(&g)])
+        .build_signed_tx(
+            &[ix],
+            &dummy_key(&g),
+            g["blockhash"].as_str().unwrap(),
+            &[fixture_lut(&g)],
+        )
         .unwrap();
     assert_signed_matches(&tx, &g["signed_txs"]["spot_order_cancel"]);
 }
@@ -160,7 +197,12 @@ fn signed_first_deposit_matches_kit_no_lut() {
     let lut_slot = g["pda"]["lut_slot"].as_u64().unwrap() as u32;
     let ix = b
         .deposit_ix(&DepositArgs {
-            token_id: 2, amount: 10.0, deposit_all: false, exists: false, lut_slot, custom_id: 0,
+            token_id: 2,
+            amount: 10.0,
+            deposit_all: false,
+            exists: false,
+            lut_slot,
+            custom_id: 0,
         })
         .unwrap();
     let tx = b

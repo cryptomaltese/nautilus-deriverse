@@ -19,17 +19,17 @@ pub const PROGRAM_DATA_PREFIX: &str = "Program data: ";
 /// Tag union over the §1.5 report structs.
 #[derive(Clone, Copy)]
 pub enum DeriverseLogEvent {
-    SpotPlaceOrder(SpotPlaceOrderReport),      // tag 10
-    SpotFillOrder(SpotFillOrderReport),        // tag 11
-    SpotOrderCancel(SpotOrderCancelReport),    // tag 13
-    PerpPlaceOrder(PerpPlaceOrderReport),      // tag 18
-    PerpFillOrder(PerpFillOrderReport),        // tag 19
-    PerpNewOrder(PerpNewOrderReport),          // tag 20
-    PerpOrderCancel(PerpOrderCancelReport),    // tag 21
-    PerpOrderRevoke(PerpOrderRevokeReport),    // tag 22
-    PerpFees(PerpFeesReport),                  // tag 23
-    PerpFunding(PerpFundingReport),            // tag 24
-    PerpMassCancel(PerpMassCancelReport),      // tag 26
+    SpotPlaceOrder(SpotPlaceOrderReport),         // tag 10
+    SpotFillOrder(SpotFillOrderReport),           // tag 11
+    SpotOrderCancel(SpotOrderCancelReport),       // tag 13
+    PerpPlaceOrder(PerpPlaceOrderReport),         // tag 18
+    PerpFillOrder(PerpFillOrderReport),           // tag 19
+    PerpNewOrder(PerpNewOrderReport),             // tag 20
+    PerpOrderCancel(PerpOrderCancelReport),       // tag 21
+    PerpOrderRevoke(PerpOrderRevokeReport),       // tag 22
+    PerpFees(PerpFeesReport),                     // tag 23
+    PerpFunding(PerpFundingReport),               // tag 24
+    PerpMassCancel(PerpMassCancelReport),         // tag 26
     PerpChangeLeverage(PerpChangeLeverageReport), // tag 28
 }
 
@@ -71,7 +71,9 @@ fn cast<T: bytemuck::Pod>(payload: &[u8]) -> Option<T> {
 #[must_use]
 pub fn decode_program_data_line(line: &str) -> Option<DeriverseLogEvent> {
     let b64 = line.strip_prefix(PROGRAM_DATA_PREFIX)?;
-    let payload = base64::engine::general_purpose::STANDARD.decode(b64.trim()).ok()?;
+    let payload = base64::engine::general_purpose::STANDARD
+        .decode(b64.trim())
+        .ok()?;
     let tag = *payload.first()?;
     match tag {
         log_type::SPOT_PLACE_ORDER => cast(&payload).map(DeriverseLogEvent::SpotPlaceOrder),
@@ -85,9 +87,7 @@ pub fn decode_program_data_line(line: &str) -> Option<DeriverseLogEvent> {
         log_type::PERP_FEES => cast(&payload).map(DeriverseLogEvent::PerpFees),
         log_type::PERP_FUNDING => cast(&payload).map(DeriverseLogEvent::PerpFunding),
         log_type::PERP_MASS_CANCEL => cast(&payload).map(DeriverseLogEvent::PerpMassCancel),
-        log_type::PERP_CHANGE_LEVERAGE => {
-            cast(&payload).map(DeriverseLogEvent::PerpChangeLeverage)
-        }
+        log_type::PERP_CHANGE_LEVERAGE => cast(&payload).map(DeriverseLogEvent::PerpChangeLeverage),
         _ => None,
     }
 }
@@ -105,13 +105,15 @@ mod tests {
 
     #[test]
     fn spot_place_order_round_trips() {
-        let mut r = SpotPlaceOrderReport::default();
-        r.tag = log_type::SPOT_PLACE_ORDER;
-        r.side = 0;
-        r.order_id = 987_654_321_012_345;
-        r.qty = 33_000_000;
-        r.price = 152_250_000_000;
-        r.seq_no = 77;
+        let r = SpotPlaceOrderReport {
+            tag: log_type::SPOT_PLACE_ORDER,
+            side: 0,
+            order_id: 987_654_321_012_345,
+            qty: 33_000_000,
+            price: 152_250_000_000,
+            seq_no: 77,
+            ..Default::default()
+        };
         let Some(DeriverseLogEvent::SpotPlaceOrder(d)) = decode_program_data_line(&line_for(&r))
         else {
             panic!("expected SpotPlaceOrder");
@@ -122,18 +124,22 @@ mod tests {
 
     #[test]
     fn spot_fill_and_cancel_round_trip() {
-        let mut f = SpotFillOrderReport::default();
-        f.tag = log_type::SPOT_FILL_ORDER;
-        f.order_id = 42;
-        f.seq_no = 78;
+        let f = SpotFillOrderReport {
+            tag: log_type::SPOT_FILL_ORDER,
+            order_id: 42,
+            seq_no: 78,
+            ..Default::default()
+        };
         assert!(matches!(
             decode_program_data_line(&line_for(&f)),
             Some(DeriverseLogEvent::SpotFillOrder(d)) if d.order_id == 42
         ));
-        let mut c = SpotOrderCancelReport::default();
-        c.tag = log_type::SPOT_ORDER_CANCEL;
-        c.order_id = 43;
-        c.seq_no = 79;
+        let c = SpotOrderCancelReport {
+            tag: log_type::SPOT_ORDER_CANCEL,
+            order_id: 43,
+            seq_no: 79,
+            ..Default::default()
+        };
         assert!(matches!(
             decode_program_data_line(&line_for(&c)),
             Some(DeriverseLogEvent::SpotOrderCancel(d)) if d.order_id == 43

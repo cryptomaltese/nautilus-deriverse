@@ -53,7 +53,9 @@ fn rpc_client(cfg: &DeriverseDataClientConfig) -> anyhow::Result<DeriverseRpcCli
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-    let cmd = std::env::args().nth(1).unwrap_or_else(|| "version".to_string());
+    let cmd = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "version".to_string());
     let cfg = DeriverseDataClientConfig::default();
     match cmd.as_str() {
         "version" => {
@@ -107,7 +109,9 @@ async fn main() -> anyhow::Result<()> {
             }
             // Prefer WSOL-USDC when present (instr 0's symbol per spec §1.8).
             let target = nautilus_model::identifiers::InstrumentId::from("WSOL-USDC.DERIVERSE");
-            let id = if instr_id == 0 { target } else {
+            let id = if instr_id == 0 {
+                target
+            } else {
                 instrument_id.ok_or_else(|| anyhow::anyhow!("no instruments emitted"))?
             };
             client.subscribe_quotes(SubscribeQuotes::new(
@@ -125,31 +129,46 @@ async fn main() -> anyhow::Result<()> {
             let mut quotes = 0u64;
             let mut last_print = tokio::time::Instant::now();
             while tokio::time::Instant::now() < deadline {
-                match tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv()).await {
-                    Ok(Some(DataEvent::Data(Data::Quote(q)))) => {
-                        quotes += 1;
-                        if last_print.elapsed().as_secs() >= 30 {
-                            println!(
-                                "[{quotes:>6}] {} bid={} ask={} bid_sz={} ask_sz={} last_slot={:?} degraded={}",
-                                q.instrument_id, q.bid_price, q.ask_price, q.bid_size, q.ask_size,
-                                freshness.last_slot(&q.instrument_id),
-                                freshness.is_degraded(&q.instrument_id),
-                            );
-                            last_print = tokio::time::Instant::now();
-                        }
+                if let Ok(Some(DataEvent::Data(Data::Quote(q)))) =
+                    tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv()).await
+                {
+                    quotes += 1;
+                    if last_print.elapsed().as_secs() >= 30 {
+                        println!(
+                            "[{quotes:>6}] {} bid={} ask={} bid_sz={} ask_sz={} last_slot={:?} degraded={}",
+                            q.instrument_id,
+                            q.bid_price,
+                            q.ask_price,
+                            q.bid_size,
+                            q.ask_size,
+                            freshness.last_slot(&q.instrument_id),
+                            freshness.is_degraded(&q.instrument_id),
+                        );
+                        last_print = tokio::time::Instant::now();
                     }
-                    _ => {}
                 }
             }
             client.disconnect().await?;
             println!("--- soak summary ---");
-            println!("quotes emitted:        {}", freshness.quotes_emitted_count());
+            println!(
+                "quotes emitted:        {}",
+                freshness.quotes_emitted_count()
+            );
             println!("stale drops:           {}", freshness.drops_stale_count());
-            println!("reconcile agreements:  {}", freshness.reconcile_agreement_count());
-            println!("reconcile divergences: {}", freshness.reconcile_divergence_count());
+            println!(
+                "reconcile agreements:  {}",
+                freshness.reconcile_agreement_count()
+            );
+            println!(
+                "reconcile divergences: {}",
+                freshness.reconcile_divergence_count()
+            );
             println!("degraded at end:       {}", freshness.is_degraded(&id));
             // Acceptance 4 gates.
-            anyhow::ensure!(freshness.quotes_emitted_count() > 0, "no QuoteTicks emitted");
+            anyhow::ensure!(
+                freshness.quotes_emitted_count() > 0,
+                "no QuoteTicks emitted"
+            );
             anyhow::ensure!(
                 freshness.reconcile_agreement_count() >= 1,
                 "no REST reconcile cycle agreed"

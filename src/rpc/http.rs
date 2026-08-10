@@ -57,7 +57,13 @@ impl DeriverseRpcClient {
         headers.insert("Content-Type".to_string(), "application/json".to_string());
         let client = HttpClient::new(headers, vec![], vec![], None, Some(timeout_secs), None)
             .map_err(|e| anyhow::anyhow!("failed to create HTTP client: {e}"))?;
-        Ok(Self { rpc_url, program_id, commitment, client, next_id: AtomicU64::new(1) })
+        Ok(Self {
+            rpc_url,
+            program_id,
+            commitment,
+            client,
+            next_id: AtomicU64::new(1),
+        })
     }
 
     /// POST one JSON-RPC call; returns the `result` member. A JSON-RPC
@@ -79,7 +85,11 @@ impl DeriverseRpcClient {
             .await
             .map_err(|e| anyhow::anyhow!("rpc {method}: {e}"))?;
         let status = resp.status.as_u16();
-        anyhow::ensure!(status < 400, "rpc {method} HTTP {status}: {}", String::from_utf8_lossy(&resp.body));
+        anyhow::ensure!(
+            status < 400,
+            "rpc {method} HTTP {status}: {}",
+            String::from_utf8_lossy(&resp.body)
+        );
         let v: Value = serde_json::from_slice(&resp.body)
             .map_err(|e| anyhow::anyhow!("rpc {method} decode: {e}"))?;
         if let Some(err) = v.get("error") {
@@ -100,7 +110,10 @@ fn rpc_error_text(err: &Value) -> String {
 }
 
 fn data_slice_json(ds: Option<(u64, u64)>) -> Value {
-    ds.map_or(Value::Null, |(offset, length)| json!({"offset": offset, "length": length}))
+    ds.map_or(
+        Value::Null,
+        |(offset, length)| json!({"offset": offset, "length": length}),
+    )
 }
 
 #[async_trait::async_trait]
@@ -154,7 +167,10 @@ impl SolanaRpc for DeriverseRpcClient {
 
     async fn get_latest_blockhash(&self) -> anyhow::Result<(String, u64)> {
         let result = self
-            .call("getLatestBlockhash", json!([{"commitment": self.commitment.as_str()}]))
+            .call(
+                "getLatestBlockhash",
+                json!([{"commitment": self.commitment.as_str()}]),
+            )
             .await?;
         let v = &result["value"];
         Ok((
@@ -169,10 +185,13 @@ impl SolanaRpc for DeriverseRpcClient {
     }
 
     async fn get_block_height(&self) -> anyhow::Result<u64> {
-        self.call("getBlockHeight", json!([{"commitment": self.commitment.as_str()}]))
-            .await?
-            .as_u64()
-            .ok_or_else(|| anyhow::anyhow!("getBlockHeight: non-numeric"))
+        self.call(
+            "getBlockHeight",
+            json!([{"commitment": self.commitment.as_str()}]),
+        )
+        .await?
+        .as_u64()
+        .ok_or_else(|| anyhow::anyhow!("getBlockHeight: non-numeric"))
     }
 
     async fn get_slot(&self) -> anyhow::Result<u64> {
@@ -184,7 +203,10 @@ impl SolanaRpc for DeriverseRpcClient {
 
     async fn get_balance(&self, pubkey: &str) -> anyhow::Result<u64> {
         let result = self
-            .call("getBalance", json!([pubkey, {"commitment": self.commitment.as_str()}]))
+            .call(
+                "getBalance",
+                json!([pubkey, {"commitment": self.commitment.as_str()}]),
+            )
             .await?;
         result["value"]
             .as_u64()
@@ -221,7 +243,8 @@ impl SolanaRpc for DeriverseRpcClient {
             "preflightCommitment": self.commitment.as_str(),
         }]);
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let body = json!({"jsonrpc": "2.0", "id": id, "method": "sendTransaction", "params": params});
+        let body =
+            json!({"jsonrpc": "2.0", "id": id, "method": "sendTransaction", "params": params});
         let resp = self
             .client
             .request(
@@ -266,10 +289,7 @@ impl SolanaRpc for DeriverseRpcClient {
             .ok_or_else(|| SendError::Transport("sendTransaction: no result signature".into()))
     }
 
-    async fn get_transaction(
-        &self,
-        signature: &str,
-    ) -> anyhow::Result<Option<(u64, Vec<String>)>> {
+    async fn get_transaction(&self, signature: &str) -> anyhow::Result<Option<(u64, Vec<String>)>> {
         let result = self
             .call(
                 "getTransaction",
@@ -306,7 +326,10 @@ mod tests {
     #[test]
     fn decodes_plain_base64_account_data() {
         let payload = b"hello-solana".to_vec();
-        let v = json!([base64::engine::general_purpose::STANDARD.encode(&payload), "base64"]);
+        let v = json!([
+            base64::engine::general_purpose::STANDARD.encode(&payload),
+            "base64"
+        ]);
         assert_eq!(decode_account_data(&v).unwrap(), payload);
     }
 

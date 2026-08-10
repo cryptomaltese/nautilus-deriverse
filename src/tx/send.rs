@@ -49,7 +49,9 @@ pub struct TxLedger<K: Eq + Hash + Clone> {
 impl<K: Eq + Hash + Clone> TxLedger<K> {
     #[must_use]
     pub fn new() -> Self {
-        Self { inner: Mutex::new(HashMap::new()) }
+        Self {
+            inner: Mutex::new(HashMap::new()),
+        }
     }
 
     /// MUST be called before the send hits the wire (Invariant 11).
@@ -96,7 +98,11 @@ pub struct BlockhashCache<R: SolanaRpc> {
 impl<R: SolanaRpc> BlockhashCache<R> {
     #[must_use]
     pub fn new(rpc: Arc<R>, refresh_secs: u64) -> Self {
-        Self { rpc, refresh_secs, cell: Mutex::new(None) }
+        Self {
+            rpc,
+            refresh_secs,
+            cell: Mutex::new(None),
+        }
     }
 
     pub async fn get(&self) -> anyhow::Result<(String, u64)> {
@@ -134,10 +140,15 @@ impl<R: SolanaRpc> TxSender<R> {
             }
             Err(SendError::Definitive(reason)) => return Ok(SubmitOutcome::Rejected { reason }),
             Err(SendError::Transport(e)) => {
-                log::warn!("deriverse send transport failure ({e}); outcome unknown — polling to expiry");
+                log::warn!(
+                    "deriverse send transport failure ({e}); outcome unknown — polling to expiry"
+                );
             }
         }
-        match self.poll_to_outcome(&signature, last_valid_block_height).await? {
+        match self
+            .poll_to_outcome(&signature, last_valid_block_height)
+            .await?
+        {
             TxOutcome::Confirmed { slot, logs } => Ok(SubmitOutcome::Confirmed { slot, logs }),
             TxOutcome::Expired => Ok(SubmitOutcome::Expired),
         }
@@ -153,7 +164,10 @@ impl<R: SolanaRpc> TxSender<R> {
     ) -> anyhow::Result<TxOutcome> {
         loop {
             if let Some(status) = self.rpc.get_signature_status(signature).await? {
-                if matches!(status.confirmation_status.as_str(), "confirmed" | "finalized") {
+                if matches!(
+                    status.confirmation_status.as_str(),
+                    "confirmed" | "finalized"
+                ) {
                     // Logs may lag status by a beat; retry the fetch.
                     for _ in 0..10 {
                         if let Some((slot, logs)) = self.rpc.get_transaction(signature).await? {
@@ -216,19 +230,13 @@ mod tests {
         async fn get_balance(&self, _p: &str) -> anyhow::Result<u64> {
             unimplemented!("not used")
         }
-        async fn get_signature_status(
-            &self,
-            _s: &str,
-        ) -> anyhow::Result<Option<SignatureStatus>> {
+        async fn get_signature_status(&self, _s: &str) -> anyhow::Result<Option<SignatureStatus>> {
             Ok(None) // never lands
         }
         async fn send_transaction(&self, _t: &str) -> Result<String, SendError> {
             unimplemented!("not used")
         }
-        async fn get_transaction(
-            &self,
-            _s: &str,
-        ) -> anyhow::Result<Option<(u64, Vec<String>)>> {
+        async fn get_transaction(&self, _s: &str) -> anyhow::Result<Option<(u64, Vec<String>)>> {
             Ok(None)
         }
     }
@@ -242,7 +250,10 @@ mod tests {
             height: AtomicU64::new(100),
             height_calls: AtomicU64::new(0),
         });
-        let sender = TxSender { rpc: Arc::clone(&rpc), poll_interval_ms: 1 };
+        let sender = TxSender {
+            rpc: Arc::clone(&rpc),
+            poll_interval_ms: 1,
+        };
         let lvbh = 105u64;
         let outcome = sender.poll_to_outcome("sig111", lvbh).await.unwrap();
         assert_eq!(outcome, TxOutcome::Expired);
@@ -259,7 +270,10 @@ mod tests {
             height: AtomicU64::new(105),
             height_calls: AtomicU64::new(0),
         });
-        let sender = TxSender { rpc, poll_interval_ms: 1 };
+        let sender = TxSender {
+            rpc,
+            poll_interval_ms: 1,
+        };
         // heights: 105 (== lvbh ⇒ pending), 106 (> lvbh ⇒ expired)
         let outcome = sender.poll_to_outcome("sig111", 105).await.unwrap();
         assert_eq!(outcome, TxOutcome::Expired);
@@ -270,11 +284,18 @@ mod tests {
         let ledger: TxLedger<String> = TxLedger::new();
         ledger.insert_before_send(
             "local-1".to_string(),
-            TxRecord { signature: "s".into(), venue_order_id: None, last_valid_block_height: 9 },
+            TxRecord {
+                signature: "s".into(),
+                venue_order_id: None,
+                last_valid_block_height: 9,
+            },
         );
         assert_eq!(ledger.len(), 1);
         ledger.bind_order_id(&"local-1".to_string(), 424_242);
-        assert_eq!(ledger.get(&"local-1".to_string()).unwrap().venue_order_id, Some(424_242));
+        assert_eq!(
+            ledger.get(&"local-1".to_string()).unwrap().venue_order_id,
+            Some(424_242)
+        );
         // Intermediate statuses never remove; only an explicit terminal prune.
         let pruned = ledger.prune_terminal(&"local-1".to_string()).unwrap();
         assert_eq!(pruned.venue_order_id, Some(424_242));

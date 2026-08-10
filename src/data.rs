@@ -107,7 +107,12 @@ impl FeedFreshness {
 
     #[must_use]
     pub fn last_slot(&self, id: &InstrumentId) -> Option<u64> {
-        self.inner.per_instrument.read().expect("freshness lock").get(id).copied()
+        self.inner
+            .per_instrument
+            .read()
+            .expect("freshness lock")
+            .get(id)
+            .copied()
     }
 
     pub fn note_heartbeat(&self, slot: u64) {
@@ -135,31 +140,54 @@ impl FeedFreshness {
     }
 
     pub fn set_degraded(&self, id: InstrumentId, degraded: bool) {
-        self.inner.degraded.write().expect("freshness lock").insert(id, degraded);
+        self.inner
+            .degraded
+            .write()
+            .expect("freshness lock")
+            .insert(id, degraded);
     }
 
     #[must_use]
     pub fn is_degraded(&self, id: &InstrumentId) -> bool {
-        self.inner.degraded.read().expect("freshness lock").get(id).copied().unwrap_or(false)
+        self.inner
+            .degraded
+            .read()
+            .expect("freshness lock")
+            .get(id)
+            .copied()
+            .unwrap_or(false)
     }
 
     pub fn set_last_tob(&self, id: InstrumentId, bid_px: i64, ask_px: i64) {
-        self.inner.last_tob.write().expect("freshness lock").insert(id, (bid_px, ask_px));
+        self.inner
+            .last_tob
+            .write()
+            .expect("freshness lock")
+            .insert(id, (bid_px, ask_px));
     }
 
     #[must_use]
     pub fn last_tob(&self, id: &InstrumentId) -> Option<(i64, i64)> {
-        self.inner.last_tob.read().expect("freshness lock").get(id).copied()
+        self.inner
+            .last_tob
+            .read()
+            .expect("freshness lock")
+            .get(id)
+            .copied()
     }
 
     pub fn count_quote(&self) {
         self.inner.quotes_emitted.fetch_add(1, Ordering::Relaxed);
     }
     pub fn count_reconcile_agreement(&self) {
-        self.inner.reconcile_agreements.fetch_add(1, Ordering::Relaxed);
+        self.inner
+            .reconcile_agreements
+            .fetch_add(1, Ordering::Relaxed);
     }
     pub fn count_reconcile_divergence(&self) {
-        self.inner.reconcile_divergences.fetch_add(1, Ordering::Relaxed);
+        self.inner
+            .reconcile_divergences
+            .fetch_add(1, Ordering::Relaxed);
     }
     #[must_use]
     pub fn quotes_emitted_count(&self) -> u64 {
@@ -244,7 +272,19 @@ fn instrument_from_meta(
         size_precision,
         Price::new(1e-9, PRICE_PRECISION),
         Quantity::new(10f64.powi(-i32::from(size_precision)), size_precision),
-        None, None, None, None, None, None, None, None, None, None, None, None, None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
         ts_init,
         ts_init,
     )
@@ -520,7 +560,8 @@ impl DataClient for DeriverseDataClient {
         // Discovery first: instruments must be in the engine cache before
         // any subscribe (RiskEngine precedent from the pacifica adapter).
         let program_id = Pubkey::from_str(&self.config.effective_program_id())?;
-        let dir = resolve_directory(self.rpc.as_ref(), &program_id, self.expected_version()).await?;
+        let dir =
+            resolve_directory(self.rpc.as_ref(), &program_id, self.expected_version()).await?;
         self.bootstrap_instruments(&dir);
         *self.directory.write().expect("directory lock") = Some(dir);
         self.ws.connect();
@@ -568,7 +609,10 @@ impl DataClient for DeriverseDataClient {
                 .cloned()
                 .ok_or_else(|| anyhow::anyhow!("unknown instrument: {id}"))?
         };
-        self.subscriptions.write().expect("subs lock").insert(id, meta.clone());
+        self.subscriptions
+            .write()
+            .expect("subs lock")
+            .insert(id, meta.clone());
 
         let mut rx = self.ws.account_subscribe(meta.account.to_string());
         let sender = get_data_event_sender();
@@ -642,7 +686,10 @@ impl DataClient for DeriverseDataClient {
             map.get(&request.instrument_id).cloned()
         }
         .ok_or_else(|| {
-            anyhow::anyhow!("instrument not found: {} (connect() bootstraps)", request.instrument_id)
+            anyhow::anyhow!(
+                "instrument not found: {} (connect() bootstraps)",
+                request.instrument_id
+            )
         })?;
         let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
             request.request_id,
@@ -688,7 +735,10 @@ mod tests {
 
     #[test]
     fn snapshot_to_quote_maps_ladder_level_zero() {
-        let snap = snap_with_tob(Some((152_250_000_000, 33_000_000)), Some((152_350_000_000, 12_000_000)));
+        let snap = snap_with_tob(
+            Some((152_250_000_000, 33_000_000)),
+            Some((152_350_000_000, 12_000_000)),
+        );
         let id = InstrumentId::from("WSOL-USDC.DERIVERSE");
         let tick = snapshot_to_quote(&snap, id, 9, 9, 9, UnixNanos::from(7u64)).expect("tick");
         assert_eq!(tick.bid_price.as_f64(), 152.25);

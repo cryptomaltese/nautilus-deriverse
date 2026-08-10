@@ -43,7 +43,10 @@ async fn main() -> anyhow::Result<()> {
         .get(&instr_id)
         .ok_or_else(|| anyhow::anyhow!("instr {instr_id} not found on mainnet"))?;
     let (slot, bytes) = rpc
-        .get_account_info(&meta.account.to_string(), Some((0, INSTR_SNAPSHOT_LEN as u64)))
+        .get_account_info(
+            &meta.account.to_string(),
+            Some((0, INSTR_SNAPSHOT_LEN as u64)),
+        )
         .await?
         .ok_or_else(|| anyhow::anyhow!("instrument account missing"))?;
     // Sanity before writing: it must decode with a two-sided spot book.

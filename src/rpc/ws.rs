@@ -117,7 +117,10 @@ impl DeriverseRpcSubscriptionClient {
     }
 
     #[must_use]
-    pub fn account_subscribe(&self, pubkey: String) -> mpsc::UnboundedReceiver<AccountNotification> {
+    pub fn account_subscribe(
+        &self,
+        pubkey: String,
+    ) -> mpsc::UnboundedReceiver<AccountNotification> {
         let (tx, rx) = mpsc::unbounded_channel();
         self.register(SubKind::Account { pubkey }, SubSink::Account(tx));
         rx
@@ -170,7 +173,10 @@ impl DeriverseRpcSubscriptionClient {
                     reg.pending.clear();
                     reg.live.clear();
                 }
-                if resend_all(&mut socket, &registry, commitment, &mut next_id).await.is_err() {
+                if resend_all(&mut socket, &registry, commitment, &mut next_id)
+                    .await
+                    .is_err()
+                {
                     continue 'reconnect;
                 }
                 let mut last_text_at = tokio::time::Instant::now();
@@ -217,9 +223,8 @@ impl DeriverseRpcSubscriptionClient {
     }
 }
 
-type Socket = tokio_tungstenite::WebSocketStream<
-    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
->;
+type Socket =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 async fn send_subscribe(
     socket: &mut Socket,
@@ -284,7 +289,9 @@ fn handle_text(text: &str, registry: &Arc<Mutex<Registry>>) {
     // Reply to a subscribe request?
     if let Some(id) = v.get("id").and_then(Value::as_u64) {
         let mut reg = registry.lock().expect("ws registry lock");
-        let Some(idx) = reg.pending.remove(&id) else { return };
+        let Some(idx) = reg.pending.remove(&id) else {
+            return;
+        };
         if let Some(err) = v.get("error") {
             // Owned frame class: subscription bounce ⇒ loud error; the spec
             // survives in the registry, so the next resubscribe nudge or
@@ -303,10 +310,14 @@ fn handle_text(text: &str, registry: &Arc<Mutex<Registry>>) {
     // Notification?
     let method = v.get("method").and_then(Value::as_str).unwrap_or_default();
     let params = &v["params"];
-    let Some(sub_id) = params.get("subscription").and_then(Value::as_u64) else { return };
+    let Some(sub_id) = params.get("subscription").and_then(Value::as_u64) else {
+        return;
+    };
     let sink = {
         let reg = registry.lock().expect("ws registry lock");
-        reg.live.get(&sub_id).map(|idx| reg.specs[*idx].sink.clone())
+        reg.live
+            .get(&sub_id)
+            .map(|idx| reg.specs[*idx].sink.clone())
     };
     let Some(sink) = sink else {
         log::warn!("deriverse ws: notification for unknown subscription {sub_id}");
@@ -333,7 +344,10 @@ fn handle_text(text: &str, registry: &Arc<Mutex<Registry>>) {
                 logs: value["logs"]
                     .as_array()
                     .map(|a| {
-                        a.iter().filter_map(Value::as_str).map(ToString::to_string).collect()
+                        a.iter()
+                            .filter_map(Value::as_str)
+                            .map(ToString::to_string)
+                            .collect()
                     })
                     .unwrap_or_default(),
             });
@@ -369,7 +383,10 @@ mod tests {
         let (client, mut rx) = client_with_account_sub();
         // Simulate the actor's request-id bookkeeping.
         client.registry.lock().unwrap().pending.insert(1, 0);
-        handle_text(r#"{"jsonrpc":"2.0","id":1,"result":5551}"#, &client.registry);
+        handle_text(
+            r#"{"jsonrpc":"2.0","id":1,"result":5551}"#,
+            &client.registry,
+        );
         let b64 = base64::engine::general_purpose::STANDARD.encode(b"payload");
         let frame = format!(
             r#"{{"jsonrpc":"2.0","method":"accountNotification","params":{{"subscription":5551,"result":{{"context":{{"slot":361000123}},"value":{{"data":["{b64}","base64"]}}}}}}}}"#

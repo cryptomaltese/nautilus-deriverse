@@ -27,8 +27,8 @@ use crate::common::consts::{
     TOKEN_PROGRAM,
 };
 use crate::tx::accounts::{
-    associated_token_address, instr_account_by_tag, lookup_table_address,
-    program_token_account, VenueContext,
+    associated_token_address, instr_account_by_tag, lookup_table_address, program_token_account,
+    VenueContext,
 };
 
 // ── Wire scaling (kit: Math.round(price*DF), Math.round(qty*10^decs)) ──
@@ -54,13 +54,25 @@ pub struct AccountMeta {
 
 impl AccountMeta {
     fn ro(pubkey: Pubkey) -> Self {
-        Self { pubkey, is_signer: false, is_writable: false }
+        Self {
+            pubkey,
+            is_signer: false,
+            is_writable: false,
+        }
     }
     fn w(pubkey: Pubkey) -> Self {
-        Self { pubkey, is_signer: false, is_writable: true }
+        Self {
+            pubkey,
+            is_signer: false,
+            is_writable: true,
+        }
     }
     fn ro_signer(pubkey: Pubkey) -> Self {
-        Self { pubkey, is_signer: true, is_writable: false }
+        Self {
+            pubkey,
+            is_signer: true,
+            is_writable: false,
+        }
     }
 }
 
@@ -131,7 +143,11 @@ impl TxBuilder<'_> {
         let d = &self.ctx.dir;
         let by_tag = |tag: AccountType| {
             instr_account_by_tag(
-                &d.program_id, d.version, tag as u32, m.asset_token_id, m.crncy_token_id,
+                &d.program_id,
+                d.version,
+                tag as u32,
+                m.asset_token_id,
+                m.crncy_token_id,
                 &d.drvs_authority,
             )
         };
@@ -147,13 +163,21 @@ impl TxBuilder<'_> {
         ])
     }
 
-    fn spot_one_sided_ctx_metas(&self, instr_id: u32, side: u8) -> anyhow::Result<Vec<AccountMeta>> {
+    fn spot_one_sided_ctx_metas(
+        &self,
+        instr_id: u32,
+        side: u8,
+    ) -> anyhow::Result<Vec<AccountMeta>> {
         // kit context-builders.ts::getSpotOneSidedContext (6 writable accounts).
         let m = self.instr(instr_id)?;
         let d = &self.ctx.dir;
         let by_tag = |tag: AccountType| {
             instr_account_by_tag(
-                &d.program_id, d.version, tag as u32, m.asset_token_id, m.crncy_token_id,
+                &d.program_id,
+                d.version,
+                tag as u32,
+                m.asset_token_id,
+                m.crncy_token_id,
                 &d.drvs_authority,
             )
         };
@@ -183,7 +207,9 @@ impl TxBuilder<'_> {
             side: a.side,
             instr_id: InstrId(a.instr_id),
             price: price_to_raw(a.price),
-            amount: CappedI64 { value: qty_to_raw(a.qty, m.asset_decs) },
+            amount: CappedI64 {
+                value: qty_to_raw(a.qty, m.asset_decs),
+            },
             edge_price: price_to_raw(a.edge_price),
         };
         let mut accounts = vec![
@@ -245,17 +271,32 @@ impl TxBuilder<'_> {
             .tokens
             .get(&a.token_id)
             .with_context(|| format!("token {} not in registry", a.token_id))?;
-        anyhow::ensure!(a.token_id != 0, "DRVS (token 0) deposit path is out of M1a scope");
-        let token_program =
-            Pubkey::from_str(if token.token2022 { TOKEN_2022_PROGRAM } else { TOKEN_PROGRAM })?;
+        anyhow::ensure!(
+            a.token_id != 0,
+            "DRVS (token 0) deposit path is out of M1a scope"
+        );
+        let token_program = Pubkey::from_str(if token.token2022 {
+            TOKEN_2022_PROGRAM
+        } else {
+            TOKEN_PROGRAM
+        })?;
         let client_ata = associated_token_address(&self.ctx.signer, &token_program, &token.mint);
         let mut accounts = vec![
             AccountMeta::ro_signer(self.ctx.signer),
             AccountMeta::w(client_ata),
             AccountMeta::w(token.vault),
             AccountMeta::ro(token.mint),
-            if a.exists { AccountMeta::ro(d.root_account) } else { AccountMeta::w(d.root_account) },
-            AccountMeta::ro(program_token_account(&d.program_id, d.version, &token.mint, &d.drvs_authority)),
+            if a.exists {
+                AccountMeta::ro(d.root_account)
+            } else {
+                AccountMeta::w(d.root_account)
+            },
+            AccountMeta::ro(program_token_account(
+                &d.program_id,
+                d.version,
+                &token.mint,
+                &d.drvs_authority,
+            )),
             AccountMeta::w(self.ctx.client_primary),
             AccountMeta::ro(Pubkey::from_str(SYSTEM_PROGRAM)?),
             AccountMeta::ro(token_program),
@@ -264,8 +305,13 @@ impl TxBuilder<'_> {
             (0u32, 0u32)
         } else {
             accounts.push(AccountMeta::w(self.ctx.client_community));
-            accounts.push(AccountMeta::w(lookup_table_address(&self.ctx.signer, u64::from(a.lut_slot))));
-            accounts.push(AccountMeta::w(Pubkey::from_str(ADDRESS_LOOKUP_TABLE_PROGRAM)?));
+            accounts.push(AccountMeta::w(lookup_table_address(
+                &self.ctx.signer,
+                u64::from(a.lut_slot),
+            )));
+            accounts.push(AccountMeta::w(Pubkey::from_str(
+                ADDRESS_LOOKUP_TABLE_PROGRAM,
+            )?));
             (a.lut_slot, 0u32)
         };
         let data = DepositData {
@@ -274,7 +320,9 @@ impl TxBuilder<'_> {
             deposit_all: u8::from(a.deposit_all),
             padding_u8: 0,
             token_id: a.token_id,
-            amount: CappedI64 { value: qty_to_raw(a.amount, token.decimals) },
+            amount: CappedI64 {
+                value: qty_to_raw(a.amount, token.decimals),
+            },
             lut_slot,
             ref_id,
             custom_id: a.custom_id,
@@ -287,6 +335,9 @@ impl TxBuilder<'_> {
     }
 
     /// Perp DATA-BYTES encoders (M1a acceptance 2; metas + client use = M1b).
+    /// Arg list mirrors the wire struct field-for-field (spec §2.2) — an
+    /// args struct lands with the M1b perp client, not before.
+    #[allow(clippy::too_many_arguments)]
     pub fn new_perp_order_data(
         &self,
         instr_id: u32,
@@ -310,7 +361,9 @@ impl TxBuilder<'_> {
             padding_u32: 0,
             instr_id: InstrId(instr_id),
             price: price_to_raw(price),
-            amount: CappedI64 { value: qty_to_raw(qty, m.asset_decs) },
+            amount: CappedI64 {
+                value: qty_to_raw(qty, m.asset_decs),
+            },
             edge_price: price_to_raw(edge_price),
         };
         Ok(bytemuck::bytes_of(&data).to_vec())
@@ -346,8 +399,16 @@ impl TxBuilder<'_> {
         let mut price = vec![3u8]; // SetComputeUnitPrice
         price.extend_from_slice(&self.compute_unit_price_microlamports.to_le_bytes());
         Ok([
-            Instruction { program_id, accounts: vec![], data: limit },
-            Instruction { program_id, accounts: vec![], data: price },
+            Instruction {
+                program_id,
+                accounts: vec![],
+                data: limit,
+            },
+            Instruction {
+                program_id,
+                accounts: vec![],
+                data: price,
+            },
         ])
     }
 
@@ -375,7 +436,10 @@ impl TxBuilder<'_> {
             .map_err(|_| anyhow::anyhow!("blockhash not 32 bytes"))?;
         let message = compile_v0_message(fee_payer, &ixs, blockhash32, luts)?;
         let signature = signing_key.sign(&message).to_bytes();
-        Ok(VersionedTransaction { signatures: vec![signature], message })
+        Ok(VersionedTransaction {
+            signatures: vec![signature],
+            message,
+        })
     }
 }
 

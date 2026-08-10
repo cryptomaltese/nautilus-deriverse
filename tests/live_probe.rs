@@ -40,14 +40,17 @@ async fn ws_handshake_and_slot_subscribe_via_workspace_tls() {
         .expect("WS handshake via the workspace rustls stack");
     socket
         .send(Message::Text(
-            r#"{"jsonrpc":"2.0","id":1,"method":"slotSubscribe","params":[]}"#.to_string().into(),
+            r#"{"jsonrpc":"2.0","id":1,"method":"slotSubscribe","params":[]}"#
+                .to_string()
+                .into(),
         ))
         .await
         .expect("subscribe send");
     let mut slots = 0u32;
     let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(15);
     while slots < 3 && tokio::time::Instant::now() < deadline {
-        let Ok(Some(Ok(Message::Text(text)))) = tokio::time::timeout_at(deadline, socket.next()).await
+        let Ok(Some(Ok(Message::Text(text)))) =
+            tokio::time::timeout_at(deadline, socket.next()).await
         else {
             continue;
         };
@@ -55,6 +58,9 @@ async fn ws_handshake_and_slot_subscribe_via_workspace_tls() {
             slots += 1;
         }
     }
-    assert!(slots >= 3, "expected >=3 slot notifications within 15s, got {slots}");
+    assert!(
+        slots >= 3,
+        "expected >=3 slot notifications within 15s, got {slots}"
+    );
     println!("WS OK — {slots} slot notifications");
 }
