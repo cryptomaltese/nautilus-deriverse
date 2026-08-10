@@ -247,8 +247,18 @@ impl SolanaRpc for DeriverseRpcClient {
             .map_err(|e| SendError::Transport(format!("decode: {e}")))?;
         if let Some(err) = v.get("error") {
             // A structured JSON-RPC error IS the node's definitive answer
-            // (preflight/program error under skip_preflight = false).
-            return Err(SendError::Definitive(rpc_error_text(err)));
+            // (preflight/program error under skip_preflight = false). The
+            // simulation logs (error.data.logs) carry the program's own
+            // formatted message (e.g. the InvalidPrice acceptable range) —
+            // append them so the reject reason stays actionable verbatim.
+            let mut reason = rpc_error_text(err);
+            if let Some(logs) = err["data"]["logs"].as_array() {
+                for line in logs.iter().filter_map(Value::as_str) {
+                    reason.push_str("\n  ");
+                    reason.push_str(line);
+                }
+            }
+            return Err(SendError::Definitive(reason));
         }
         v.get("result")
             .and_then(Value::as_str)
