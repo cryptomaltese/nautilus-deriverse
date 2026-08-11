@@ -7,35 +7,51 @@
 # signature polling. Byte SoT: drv-models (pinned tag, https URL — never ssh).
 # Conformance gate: golden fixtures generated once from the @deriverse/kit
 # clone (kit 1.0.74 / contract v0.2.74), bytes checked in under tests/fixtures.
+# This manifest is workspace-independent by design: the crate is distributed
+# standalone as a generated mirror (github.com/cryptomaltese/nautilus-deriverse),
+# so every dependency carries an explicit source — no `{ workspace = true }`.
+#
+# The nautilus deps are GIT deps pinned to develop@c95a4671 (workspace version
+# 0.59.0), NOT crates.io: the published 0.59.0 was cut later from v1.229.0 and
+# is API-incompatible with this code (e.g. `CurrencyPair::new_checked` gained
+# an `Option<Params>` parameter — verified by compiling standalone against
+# crates.io 0.59.0, E0061). In the monorepo, the root workspace's
+# [patch."https://github.com/nautechsystems/nautilus_trader"] redirects these
+# to the pinned vendor checkout under frameworks/ (same rev), so monorepo
+# builds never touch the network. Move to versioned crates.io deps when the
+# pin advances to a released version (v1.229.0+).
 [package]
 name = "nautilus-deriverse"
-version.workspace = true
-edition.workspace = true
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.96.0"
 description = "Deriverse on-chain CLOB integration adapter for the Nautilus trading engine (bespoke)"
+license = "MIT"
+repository = "https://github.com/cryptomaltese/nautilus-deriverse"
 
 [lib]
 name = "nautilus_deriverse"
 crate-type = ["rlib"]
 
 [dependencies]
-nautilus-common = { workspace = true }
-nautilus-core = { workspace = true }
+nautilus-common = { git = "https://github.com/nautechsystems/nautilus_trader", rev = "c95a4671df9ff45947be64f2caadc90538bcf4c4" }
+nautilus-core = { git = "https://github.com/nautechsystems/nautilus_trader", rev = "c95a4671df9ff45947be64f2caadc90538bcf4c4" }
 # Lights nautilus-common's `live` feature (get_data_event_sender/get_runtime)
 # — mirrors the pacifica adapter's exact dep set (plan-drift note, recorded).
-nautilus-live = { workspace = true }
-nautilus-model = { workspace = true }
-nautilus-network = { workspace = true }
+nautilus-live = { git = "https://github.com/nautechsystems/nautilus_trader", rev = "c95a4671df9ff45947be64f2caadc90538bcf4c4" }
+nautilus-model = { git = "https://github.com/nautechsystems/nautilus_trader", rev = "c95a4671df9ff45947be64f2caadc90538bcf4c4" }
+nautilus-network = { git = "https://github.com/nautechsystems/nautilus_trader", rev = "c95a4671df9ff45947be64f2caadc90538bcf4c4" }
 
-anyhow = { workspace = true }
+anyhow = "1"
 async-trait = "0.1"
-log = { workspace = true }
+log = "0.4"
 env_logger = "0.11"
-tokio = { workspace = true }
-tokio-tungstenite = { workspace = true }
-tokio-util = { workspace = true }
-futures-util = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = { version = "0.28.0", features = ["rustls-tls-webpki-roots"] }
+tokio-util = { version = "0.7.18", default-features = false, features = ["io"] }
+futures-util = { version = "0.3.32", default-features = false, features = ["std", "sink"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 # Venue byte SoT — account/log/instruction structs are consumed, never
 # re-declared (spec §1.2). Pinned release tag over https.
