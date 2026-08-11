@@ -1,0 +1,25 @@
+# crates.io publish — stub. Manual trigger only; does nothing yet.
+#
+# TODO(M1b): enable the publish steps below when the crate is ready to ship
+# to crates.io. Blockers to clear first:
+#   - the nautilus deps are git-pinned (develop@c95a4671); cargo publish
+#     rejects git deps, so they must move to published crates.io versions
+#     (v1.229.0+ / 0.59.0+ once the pin advances to a released rev)
+#   - CARGO_REGISTRY_TOKEN must be added as a repository secret
+name: Publish
+
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish (disabled — M1b)
+        run: |
+          echo "Publishing is not enabled yet (M1b). See the TODO at the top of this workflow."
+          # rustup toolchain install 1.96.0 --profile minimal
+          # rustup default 1.96.0
+          # cargo publish --dry-run
+          # cargo publish --token "${CARGO_REGISTRY_TOKEN}"

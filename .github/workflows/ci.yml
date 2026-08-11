@@ -1,0 +1,32 @@
+# Standalone CI for the nautilus-deriverse mirror.
+#
+# In the upstream monorepo this file lives under the crate directory and is
+# inert (GitHub only reads workflows at the repository root); in the generated
+# mirror the crate directory IS the repository root, so it runs there.
+#
+# Offline-safe: the live network probes are #[ignore]d, so `cargo test` needs
+# no credentials and no RPC access. (Dependency fetching — including the
+# git-pinned nautilus_trader rev — is ordinary cargo network use.)
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust 1.96.0
+        run: |
+          rustup toolchain install 1.96.0 --profile minimal
+          rustup default 1.96.0
+      - name: Build
+        run: cargo build --all-targets
+      - name: Test
+        run: cargo test
