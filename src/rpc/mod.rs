@@ -55,13 +55,33 @@ pub trait SolanaRpc: Send + Sync {
     /// `(blockhash_base58, last_valid_block_height)`.
     async fn get_latest_blockhash(&self) -> anyhow::Result<(String, u64)>;
     async fn get_block_height(&self) -> anyhow::Result<u64>;
+    /// `getEpochInfo` → `(absolute_slot, block_height)` — one atomic
+    /// response, so BOTH readings come from the same answering node. The
+    /// expiry proving sequence keys on this pairing: `block_height` is
+    /// compared against `last_valid_block_height` (like units), and
+    /// `absolute_slot` anchors the slot-to-slot acceptance gate for the
+    /// searched status re-check.
+    async fn get_epoch_info(&self) -> anyhow::Result<(u64, u64)>;
     async fn get_slot(&self) -> anyhow::Result<u64>;
     /// Lamports.
     async fn get_balance(&self, pubkey: &str) -> anyhow::Result<u64>;
+    /// `getSignatureStatuses` with `searchTransactionHistory: false` — a
+    /// RECENT-STATUS-CACHE read (evicts ~150 blocks past the blockhash's
+    /// last valid height). Cheap; the hot confirm poll uses it. `None` from
+    /// this read is NEVER proof of absence.
     async fn get_signature_status(
         &self,
         signature: &str,
     ) -> anyhow::Result<Option<SignatureStatus>>;
+    /// `getSignatureStatuses` with `searchTransactionHistory: true` — a
+    /// LEDGER-backed read that survives cache eviction. Returns the
+    /// answering node's `context.slot` alongside the status. More expensive;
+    /// used ONLY for the expiry proof-of-absence re-check, never the hot
+    /// poll.
+    async fn get_signature_status_searched(
+        &self,
+        signature: &str,
+    ) -> anyhow::Result<(u64, Option<SignatureStatus>)>;
     /// `sendTransaction` (base64, skipPreflight = false).
     async fn send_transaction(&self, tx_base64: &str) -> Result<String, SendError>;
     /// `(slot, log_messages)` of a confirmed transaction; `Ok(None)` if the

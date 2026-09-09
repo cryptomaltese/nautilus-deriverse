@@ -1,9 +1,22 @@
-//! Attended spot-order rungs (M1a acceptance 5–6).
+//! Attended spot-order rungs (M1a acceptance 5–6) + qty-targeted flatten.
 //!
-//!   place  --keypair <path> --instr 0 --side bid|ask --notional-usd 5
+//!   place  --keypair <path> --instr 0 --side bid|ask
+//!          sizing (exactly one):
+//!            --notional-usd 5     qty recomputed from the live book (opens)
+//!            --qty 0.033          exact qty, floored to the size step;
+//!                                 capped at qty x price <= $6 unless
+//!                                 --allow-large
+//!            --flatten            sell the ENTIRE venue-held asset balance
+//!                                 (--side ask; implies --marketable --ioc;
+//!                                 cap-exempt — an exit is never blocked)
 //!          [--offset-pct -30]   off-market limit (default)
 //!          [--marketable --ioc] crossing IOC (acceptance 6)
 //!   cancel --keypair <path> --instr 0 --side bid|ask --order-id <i64>
+//!
+//! Close/flatten flows QUANTITY-TARGET the venue's own state (client
+//! primary account balance, decode/client.rs): the venue oversell-rejects
+//! (InsufficientFunds 132) and never clamps, so recomputing a close qty
+//! from notional ÷ a moved price is a reject waiting to happen (spec §1.4).
 //!
 //! Own-transaction truth (Invariant 4): the venue order_id and every
 //! fill/cancel proof are decoded from the CONFIRMED transaction's own logs
@@ -16,12 +29,13 @@ use solana_pubkey::Pubkey;
 
 use nautilus_deriverse::common::consts::{DF, USDC_MINT};
 use nautilus_deriverse::config::DeriverseExecClientConfig;
+use nautilus_deriverse::decode::client::{client_spot_token_balance, qty_target_from_balance};
 use nautilus_deriverse::decode::instr::decode_instr_account;
 use nautilus_deriverse::decode::logs::{decode_program_data_line, DeriverseLogEvent};
 use nautilus_deriverse::rpc::{DeriverseRpcClient, SolanaRpc};
 use nautilus_deriverse::tx::accounts::{resolve_directory, VenueContext};
 use nautilus_deriverse::tx::build::{
-    NewSpotOrderArgs, ResolvedLut, SpotOrderCancelArgs, TxBuilder,
+    snap_qty_to_step_raw, NewSpotOrderArgs, ResolvedLut, SpotOrderCancelArgs, TxBuilder,
 };
 use nautilus_deriverse::tx::send::{BlockhashCache, SubmitOutcome, TxLedger, TxRecord, TxSender};
 
@@ -171,12 +185,17 @@ async fn main() -> anyhow::Result<()> {
 
     match cmd.as_str() {
         "place" => {
-            let notional: f64 = required("--notional-usd")?.parse()?;
+            let notional_arg: Option<f64> = arg("--notional-usd").map(|v| v.parse()).transpose()?;
+            let qty_arg: Option<f64> = arg("--qty").map(|v| v.parse()).transpose()?;
+            let flatten = flag("--flatten");
             anyhow::ensure!(
-                notional > 0.0 && notional <= 6.0,
-                "M1a budget cap: notional <= $6"
+                usize::from(notional_arg.is_some())
+                    + usize::from(qty_arg.is_some())
+                    + usize::from(flatten)
+                    == 1,
+                "exactly one sizing mode: --notional-usd | --qty | --flatten"
             );
-            let marketable = flag("--marketable");
+            let marketable = flag("--marketable") || flatten;
             let ioc = flag("--ioc") || marketable;
             let offset_pct: f64 = arg("--offset-pct")
                 .unwrap_or_else(|| "-30".into())
@@ -213,12 +232,69 @@ async fn main() -> anyhow::Result<()> {
                 }
             };
             let step = 10f64.powi(-(meta.asset_decs.min(9) as i32));
-            let qty = ((notional / price) / step).round() * step;
+            // (display qty, wire-exact raw override). Flatten carries the
+            // integer to the wire — the display-float round-trip can round
+            // UP 1-2 raw units at large magnitudes (oversell ⇒ 132).
+            let (qty, qty_raw_override) = if flatten {
+                // Qty-target the VENUE's own holdings (spec §1.4): the venue
+                // oversell-rejects (InsufficientFunds 132), never clamps.
+                anyhow::ensure!(side == 1, "--flatten sells holdings: --side ask required");
+                let (_s, acct) = rpc
+                    .get_account_info(&ctx.client_primary.to_string(), None)
+                    .await?
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("client primary account missing — run setup first")
+                    })?;
+                let raw = client_spot_token_balance(
+                    &acct,
+                    cfg.effective_program_version(),
+                    meta.asset_token_id,
+                )?
+                .unwrap_or(0);
+                let (q, target_raw) = qty_target_from_balance(raw, meta.asset_decs, step)?;
+                anyhow::ensure!(
+                    target_raw > 0,
+                    "nothing to flatten: venue balance {raw} (raw) for token {} rounds to zero",
+                    meta.asset_token_id
+                );
+                println!(
+                    "flatten: venue-held balance {raw} (raw) -> qty {q} (wire raw {target_raw})"
+                );
+                (q, Some(target_raw))
+            } else if let Some(q) = qty_arg {
+                // Explicit qty: snap to the size step in RAW-INTEGER space
+                // (snap_qty_to_step_raw) — exact on clean k·step multiples
+                // (relative epsilon rescues their representation ulp),
+                // off-grid input floors DOWN, and the result never exceeds
+                // the epsilon-floored intent encoding (a close qty above
+                // holdings rejects, spec §1.4). The wire encodes the
+                // snapped raw verbatim; a snap to zero falls into the
+                // qty > 0 ensure below.
+                let snapped_raw = snap_qty_to_step_raw(q, step, meta.asset_decs)?;
+                let q = snapped_raw.max(0) as f64 / 10f64.powi(meta.asset_decs as i32);
+                // Budget cap rides the same live price every mode already
+                // uses (marketable price = the crossing bound). Flatten is
+                // exempt — an exit is never blocked.
+                let est = q * price;
+                anyhow::ensure!(
+                    est <= 6.0 || flag("--allow-large"),
+                    "M1a budget cap: --qty x price ~= ${est:.2} > $6 (pass --allow-large to override)"
+                );
+                (q, Some(snapped_raw))
+            } else {
+                let notional = notional_arg.expect("sizing mode checked above");
+                anyhow::ensure!(
+                    notional > 0.0 && notional <= 6.0,
+                    "M1a budget cap: notional <= $6"
+                );
+                (((notional / price) / step).round() * step, None)
+            };
             anyhow::ensure!(qty > 0.0, "qty rounded to zero");
+            let est_notional = qty * price;
             println!(
-                "book: bid={bid_px} ask={ask_px} | placing side={side_str} ioc={ioc} price={price} qty={qty} (~${notional})"
+                "book: bid={bid_px} ask={ask_px} | placing side={side_str} ioc={ioc} price={price} qty={qty} (~${est_notional:.2})"
             );
-            let ix = builder.new_spot_order_ix(&NewSpotOrderArgs {
+            let order_args = NewSpotOrderArgs {
                 instr_id,
                 side,
                 ioc: u8::from(ioc),
@@ -226,7 +302,13 @@ async fn main() -> anyhow::Result<()> {
                 price,
                 qty,
                 edge_price: 0.0,
-            })?;
+            };
+            let ix = match qty_raw_override {
+                // Wire-exact: the balance-derived integer, never the
+                // display float (round-trip overshoot ⇒ oversell ⇒ 132).
+                Some(raw) => builder.new_spot_order_ix_raw(&order_args, raw)?,
+                None => builder.new_spot_order_ix(&order_args)?,
+            };
             let (blockhash, lvbh) = blockhash_cache.get().await?;
             let tx = builder.build_signed_tx(&[ix], &key, &blockhash, &luts)?;
             let local_key = format!("place-{}", tx.signature_base58());
@@ -239,29 +321,56 @@ async fn main() -> anyhow::Result<()> {
                 },
             );
             println!("sig: {}", tx.signature_base58());
+            // Ledger prune discipline (Invariant 11): TERMINAL outcomes only
+            // — landed-but-failed, IOC (fills or dies, never rests), expiry,
+            // definite reject. A confirmed RESTING order is NOT terminal:
+            // its record (with the bound venue_order_id) stays until the
+            // cancel/fill leg. Bins are one-shot so the retained record dies
+            // with the process; M1b keys the long-lived ledger by
+            // ClientOrderId and prunes on the same terminal set.
             match sender.submit_and_confirm(&tx, lvbh).await? {
-                SubmitOutcome::Confirmed { slot, logs } => {
+                SubmitOutcome::Confirmed { slot, logs, err } => {
+                    if let Some(err) = err {
+                        for line in &logs {
+                            println!("  {line}");
+                        }
+                        ledger.prune_terminal(&local_key);
+                        anyhow::bail!(
+                            "tx landed at slot {slot} but the program FAILED: {err} — \
+                             no order placed (atomic tx, no state change); safe to re-run once"
+                        );
+                    }
                     println!("TxOutcome::Confirmed at slot {slot}");
                     let (order_id, saw_fill, _c) = print_own_reports(&logs);
                     if let Some(id) = order_id {
                         ledger.bind_order_id(&local_key, id);
                         println!("venue order_id bound: {id}");
                     }
-                    if ioc && !saw_fill {
-                        println!("IOC did not fill (book moved) — nothing rests, safe to re-run");
-                    }
-                    if !ioc && order_id.is_none() {
+                    if ioc {
+                        if !saw_fill {
+                            println!(
+                                "IOC did not fill (book moved) — nothing rests, safe to re-run"
+                            );
+                        }
+                        ledger.prune_terminal(&local_key); // IOC never rests: terminal
+                    } else if order_id.is_none() {
+                        // Confirmed clean but no place report: state unknown —
+                        // NOT proven terminal, record retained (Invariant 11).
                         anyhow::bail!(
                             "no SpotPlaceOrderReport in own logs — investigate before retry"
                         );
                     }
+                    // Resting order: record retained until its cancel/fill.
                 }
                 SubmitOutcome::Expired => {
+                    ledger.prune_terminal(&local_key);
                     anyhow::bail!("tx EXPIRED — nothing landed; safe to re-run once")
                 }
-                SubmitOutcome::Rejected { reason } => anyhow::bail!("REJECTED: {reason}"),
+                SubmitOutcome::Rejected { reason } => {
+                    ledger.prune_terminal(&local_key);
+                    anyhow::bail!("REJECTED: {reason}")
+                }
             }
-            ledger.prune_terminal(&local_key);
         }
         "cancel" => {
             let order_id: i64 = required("--order-id")?.parse()?;
@@ -274,7 +383,16 @@ async fn main() -> anyhow::Result<()> {
             let tx = builder.build_signed_tx(&[ix], &key, &blockhash, &luts)?;
             println!("sig: {}", tx.signature_base58());
             match sender.submit_and_confirm(&tx, lvbh).await? {
-                SubmitOutcome::Confirmed { slot, logs } => {
+                SubmitOutcome::Confirmed { slot, logs, err } => {
+                    if let Some(err) = err {
+                        for line in &logs {
+                            println!("  {line}");
+                        }
+                        anyhow::bail!(
+                            "cancel landed at slot {slot} but the program FAILED: {err} — \
+                             order NOT cancelled; investigate before retry"
+                        );
+                    }
                     println!("TxOutcome::Confirmed at slot {slot}");
                     let (_o, _f, saw_cancel) = print_own_reports(&logs);
                     anyhow::ensure!(saw_cancel, "no SpotOrderCancelReport in own logs");

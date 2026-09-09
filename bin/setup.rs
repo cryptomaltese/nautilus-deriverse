@@ -216,11 +216,17 @@ async fn main() -> anyhow::Result<()> {
                 poll_interval_ms: cfg.signature_poll_interval_ms,
             };
             match sender.submit_and_confirm(&tx, lvbh).await? {
-                SubmitOutcome::Confirmed { slot, logs } => {
-                    println!("CONFIRMED at slot {slot}; {} log lines", logs.len());
+                SubmitOutcome::Confirmed { slot, logs, err } => {
                     for line in &logs {
                         println!("  {line}");
                     }
+                    if let Some(err) = err {
+                        anyhow::bail!(
+                            "deposit landed at slot {slot} but the program FAILED: {err} — \
+                             no state change (atomic tx); safe to retry once"
+                        );
+                    }
+                    println!("CONFIRMED at slot {slot}; {} log lines", logs.len());
                 }
                 SubmitOutcome::Expired => {
                     anyhow::bail!("deposit tx EXPIRED — safe to retry once, then stop")

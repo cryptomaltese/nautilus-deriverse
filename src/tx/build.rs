@@ -43,6 +43,40 @@ pub fn qty_to_raw(qty: f64, decs: u32) -> i64 {
     (qty * 10f64.powi(decs as i32)).round() as i64
 }
 
+/// Admitted domain bound for `snap_qty_to_step_raw` (2^51 raw units): the
+/// round-trip-safe magnitude under which a clean multiple's representation
+/// error (≈ `v·2^-52` raw units) stays below the capped epsilon, so the
+/// exactness invariant holds on the whole admitted domain.
+const MAX_SNAP_RAW: f64 = (1i64 << 51) as f64;
+
+/// Snap a typed display qty to the instrument size step, in RAW-INTEGER
+/// space. Invariant: exact on clean `k·step` multiples for ALL admitted
+/// magnitudes (`v = qty·10^decs < 2^51`); genuinely off-grid input FLOORS
+/// down; inputs at or beyond 2^51 hard-error. The epsilon that rescues a
+/// clean multiple's representation error (`0.3·10 = 2.9999999999999996 →
+/// +ε → floor 3`) is relative but CAPPED in absolute raw units at 0.499:
+/// an uncapped relative epsilon adds ≥ 1 raw unit once `v ≥ ~1e12`,
+/// breaking exactness on large clean multiples, while the needed rescue is
+/// only `≈ v·2^-52` raw — below the cap everywhere in the admitted domain.
+/// The intent must be a floor, not `qty_to_raw`'s round: with
+/// `step_raw == 1` (every step of the form `10^-decs`) the grid floor is
+/// vacuous, and a round would carry fractional raw ≥ 0.5 UP past typed
+/// intent (`0.25` at step 0.1 placing 0.3). Float-space compare-and-clamp
+/// misfires the other way: `k·step` parses 1 ulp above `qty`, and a
+/// `snapped > qty` clamp undershoots by a FULL step.
+pub fn snap_qty_to_step_raw(qty: f64, size_step: f64, decs: u32) -> anyhow::Result<i64> {
+    let v = qty * 10f64.powi(decs as i32);
+    anyhow::ensure!(
+        v < MAX_SNAP_RAW,
+        "qty {qty} at {decs} decimals is {v} raw units — at/beyond the \
+         2^51 exactness bound; refusing lossy snap"
+    );
+    let eps = (v * 1e-12).min(0.499);
+    let intent_raw = (v + eps).floor() as i64;
+    let step_raw = qty_to_raw(size_step, decs).max(1);
+    Ok((intent_raw / step_raw) * step_raw)
+}
+
 // ── Instruction model ──
 
 #[derive(Clone, Debug, PartialEq)]
@@ -199,6 +233,21 @@ impl TxBuilder<'_> {
     /// kit spot-instructions.ts::buildNewSpotOrderInstruction (no referral).
     pub fn new_spot_order_ix(&self, a: &NewSpotOrderArgs) -> anyhow::Result<Instruction> {
         let m = self.instr(a.instr_id)?;
+        let qty_raw = qty_to_raw(a.qty, m.asset_decs);
+        self.new_spot_order_ix_raw(a, qty_raw)
+    }
+
+    /// Wire-exact qty entry point: `qty_raw` is written verbatim as the
+    /// order amount; `a.qty` is display-only here. Qty-targeted closes use
+    /// this path — the display-float round-trip (÷10^decs then ×10^decs +
+    /// round) rounds UP 1–2 raw units for amounts ≥ ~2^51, which oversells
+    /// a balance-derived close (the venue rejects, never clamps).
+    pub fn new_spot_order_ix_raw(
+        &self,
+        a: &NewSpotOrderArgs,
+        qty_raw: i64,
+    ) -> anyhow::Result<Instruction> {
+        let m = self.instr(a.instr_id)?;
         let d = &self.ctx.dir;
         let data = NewSpotOrderData {
             tag: 12,
@@ -207,9 +256,7 @@ impl TxBuilder<'_> {
             side: a.side,
             instr_id: InstrId(a.instr_id),
             price: price_to_raw(a.price),
-            amount: CappedI64 {
-                value: qty_to_raw(a.qty, m.asset_decs),
-            },
+            amount: CappedI64 { value: qty_raw },
             edge_price: price_to_raw(a.edge_price),
         };
         let mut accounts = vec![
@@ -706,5 +753,93 @@ mod tests {
         assert_eq!(price_to_raw(152.25), 152_250_000_000);
         assert_eq!(qty_to_raw(0.033, 9), 33_000_000);
         assert_eq!(qty_to_raw(10.0, 6), 10_000_000);
+    }
+
+    /// Round-3 review: a clean `k·step` input must snap to EXACTLY k steps.
+    /// A float-space `snapped > qty` clamp misfires here (`3 × 0.1 =
+    /// 0.30000000000000004 > 0.3` ⇒ a full-step silent undershoot); the
+    /// raw-integer snap collapses the ulp via `qty_to_raw`'s rounding.
+    #[test]
+    fn snap_preserves_clean_step_multiples() {
+        // The reviewer's reproduced misfires (step 0.1, decs 1).
+        assert_eq!(snap_qty_to_step_raw(0.3, 0.1, 1).unwrap(), 3);
+        assert_eq!(snap_qty_to_step_raw(0.6, 0.1, 1).unwrap(), 6);
+        assert_eq!(snap_qty_to_step_raw(0.7, 0.1, 1).unwrap(), 7);
+        assert_eq!(snap_qty_to_step_raw(1.2, 0.1, 1).unwrap(), 12);
+        assert_eq!(snap_qty_to_step_raw(1.4, 0.1, 1).unwrap(), 14);
+        assert_eq!(snap_qty_to_step_raw(1.7, 0.1, 1).unwrap(), 17);
+        assert_eq!(snap_qty_to_step_raw(2.4, 0.1, 1).unwrap(), 24);
+        // Exhaustive sweep: every clean k·step across decs 1..=9 is exact.
+        for decs in 1..=9u32 {
+            let step = 10f64.powi(-(decs as i32));
+            for k in 1..=1000i64 {
+                let typed = k as f64 * step; // what the operator's parse yields
+                assert_eq!(
+                    snap_qty_to_step_raw(typed, step, decs).unwrap(),
+                    k,
+                    "clean {k}·step misfired at decs {decs}"
+                );
+            }
+        }
+    }
+
+    /// Typo tolerance floors DOWN, never up past intent — including where
+    /// `step_raw == 1` makes the grid floor vacuous and only the
+    /// epsilon-floored intent stands between a fractional raw ≥ 0.5 and a
+    /// round-to-nearest overshoot (final review round: `0.25` at step 0.1
+    /// snapped to raw 3 = placing 0.3, +20% over typed intent).
+    #[test]
+    fn snap_floors_off_grid_input_down() {
+        // step_raw == 1 (the bin's only calling convention): round would
+        // say 3 for both — the floor says 2.
+        assert_eq!(snap_qty_to_step_raw(0.25, 0.1, 1).unwrap(), 2);
+        assert_eq!(snap_qty_to_step_raw(0.29, 0.1, 1).unwrap(), 2);
+        // Clean multiple at the same shape stays exact.
+        assert_eq!(snap_qty_to_step_raw(0.3, 0.1, 1).unwrap(), 3);
+        // decs-9, step_raw == 1: fractional raw .6 floors, never rounds up.
+        assert_eq!(
+            snap_qty_to_step_raw(0.033_999_999_6, 1e-9, 9).unwrap(),
+            33_999_999
+        );
+        // Representation-error input snaps to its intended grid point.
+        assert_eq!(snap_qty_to_step_raw(0.033, 1e-3, 9).unwrap(), 33_000_000);
+        // Genuinely off-grid (just under the next multiple): floors down.
+        assert_eq!(
+            snap_qty_to_step_raw(0.033_999_9, 1e-3, 9).unwrap(),
+            33_000_000
+        );
+        // Zero / negative collapse to ≤ 0 (caller's qty > 0 gate rejects).
+        assert_eq!(snap_qty_to_step_raw(0.0, 1e-3, 9).unwrap(), 0);
+        assert!(snap_qty_to_step_raw(-0.5, 1e-3, 9).unwrap() <= 0);
+    }
+
+    /// Final review round: the epsilon is capped in ABSOLUTE raw units — an
+    /// uncapped relative epsilon adds ≥ 1 raw unit once v ≥ ~1e12, breaking
+    /// exactness on large clean multiples (snap(1000.0) read
+    /// 1_000_000_000_001). Exactness holds across the admitted domain
+    /// (v < 2^51); at/beyond the bound the snap hard-errors.
+    #[test]
+    fn snap_is_exact_at_large_magnitudes_and_bounds_its_domain() {
+        // Previously +1 raw with the uncapped relative epsilon.
+        assert_eq!(
+            snap_qty_to_step_raw(1000.0, 1e-9, 9).unwrap(),
+            1_000_000_000_000
+        );
+        assert_eq!(
+            snap_qty_to_step_raw(5000.0, 1e-9, 9).unwrap(),
+            5_000_000_000_000
+        );
+        // Large admitted clean multiple stays exact.
+        assert_eq!(
+            snap_qty_to_step_raw(2_000_000.0, 1e-9, 9).unwrap(),
+            2_000_000_000_000_000
+        );
+        // Worst-ulp clean multiple just under the bound (replica-scanned:
+        // zero deficit across [2^51 - 2e5, 2^51)).
+        let k = (1i64 << 51) - 1;
+        assert_eq!(snap_qty_to_step_raw(k as f64 * 1e-9, 1e-9, 9).unwrap(), k);
+        // At and beyond 2^51: hard error, never a lossy snap.
+        assert!(snap_qty_to_step_raw((1i64 << 51) as f64 * 1e-9, 1e-9, 9).is_err());
+        assert!(snap_qty_to_step_raw(3_000_000.0, 1e-9, 9).is_err());
     }
 }

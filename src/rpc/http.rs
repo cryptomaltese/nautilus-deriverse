@@ -116,6 +116,30 @@ fn data_slice_json(ds: Option<(u64, u64)>) -> Value {
     )
 }
 
+/// `getSignatureStatuses` params. `search_transaction_history = false` is
+/// the recent-status-cache read (hot poll); `true` is the ledger-backed
+/// read the expiry proof-of-absence requires (the cache evicts ~150 blocks
+/// past the blockhash's last valid height — a cache-backed `None` is never
+/// proof).
+fn signature_status_params(signature: &str, search_transaction_history: bool) -> Value {
+    json!([[signature], {"searchTransactionHistory": search_transaction_history}])
+}
+
+/// One row of a `getSignatureStatuses` response `value` array.
+fn parse_signature_status(result: &Value) -> Option<SignatureStatus> {
+    match &result["value"][0] {
+        Value::Null => None,
+        s => Some(SignatureStatus {
+            slot: s["slot"].as_u64().unwrap_or_default(),
+            confirmation_status: s["confirmationStatus"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            err: (!s["err"].is_null()).then(|| s["err"].clone()),
+        }),
+    }
+}
+
 #[async_trait::async_trait]
 impl SolanaRpc for DeriverseRpcClient {
     async fn get_account_info(
@@ -194,6 +218,22 @@ impl SolanaRpc for DeriverseRpcClient {
         .ok_or_else(|| anyhow::anyhow!("getBlockHeight: non-numeric"))
     }
 
+    async fn get_epoch_info(&self) -> anyhow::Result<(u64, u64)> {
+        let result = self
+            .call(
+                "getEpochInfo",
+                json!([{"commitment": self.commitment.as_str()}]),
+            )
+            .await?;
+        let absolute_slot = result["absoluteSlot"]
+            .as_u64()
+            .ok_or_else(|| anyhow::anyhow!("getEpochInfo: no absoluteSlot"))?;
+        let block_height = result["blockHeight"]
+            .as_u64()
+            .ok_or_else(|| anyhow::anyhow!("getEpochInfo: no blockHeight"))?;
+        Ok((absolute_slot, block_height))
+    }
+
     async fn get_slot(&self) -> anyhow::Result<u64> {
         self.call("getSlot", json!([{"commitment": self.commitment.as_str()}]))
             .await?
@@ -220,20 +260,26 @@ impl SolanaRpc for DeriverseRpcClient {
         let result = self
             .call(
                 "getSignatureStatuses",
-                json!([[signature], {"searchTransactionHistory": false}]),
+                signature_status_params(signature, false),
             )
             .await?;
-        match &result["value"][0] {
-            Value::Null => Ok(None),
-            s => Ok(Some(SignatureStatus {
-                slot: s["slot"].as_u64().unwrap_or_default(),
-                confirmation_status: s["confirmationStatus"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .to_string(),
-                err: (!s["err"].is_null()).then(|| s["err"].clone()),
-            })),
-        }
+        Ok(parse_signature_status(&result))
+    }
+
+    async fn get_signature_status_searched(
+        &self,
+        signature: &str,
+    ) -> anyhow::Result<(u64, Option<SignatureStatus>)> {
+        let result = self
+            .call(
+                "getSignatureStatuses",
+                signature_status_params(signature, true),
+            )
+            .await?;
+        // Answering node's slot at response time; a missing context reads 0,
+        // which the expiry gate treats as "node position unknown ⇒ no proof".
+        let context_slot = result["context"]["slot"].as_u64().unwrap_or_default();
+        Ok((context_slot, parse_signature_status(&result)))
     }
 
     async fn send_transaction(&self, tx_base64: &str) -> Result<String, SendError> {
@@ -358,5 +404,146 @@ mod tests {
             rpc_error_text(&err),
             "Transaction simulation failed: Blockhash not found"
         );
+    }
+
+    /// M1b review (critical): the expiry proving re-check MUST be the
+    /// ledger-backed read — searchTransactionHistory: true — while the hot
+    /// poll stays on the cheap cache read.
+    #[test]
+    fn proving_read_sends_search_transaction_history_true() {
+        let searched = signature_status_params("sigA", true);
+        assert_eq!(searched[1]["searchTransactionHistory"], json!(true));
+        assert_eq!(searched[0], json!(["sigA"]));
+        let cached = signature_status_params("sigA", false);
+        assert_eq!(cached[1]["searchTransactionHistory"], json!(false));
+    }
+
+    /// Minimal loopback HTTP/1.1 responder (hermetic — no external hosts):
+    /// serves one canned JSON-RPC body per connection, capturing each
+    /// request body for wire assertions.
+    async fn spawn_capture_server(
+        responses: Vec<String>,
+    ) -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let bodies = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let captured = std::sync::Arc::clone(&bodies);
+        tokio::spawn(async move {
+            for resp_body in responses {
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    return;
+                };
+                let mut buf = Vec::new();
+                let mut tmp = [0u8; 4096];
+                let body = loop {
+                    let Ok(n) = sock.read(&mut tmp).await else {
+                        return;
+                    };
+                    if n == 0 {
+                        return;
+                    }
+                    buf.extend_from_slice(&tmp[..n]);
+                    if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let head = String::from_utf8_lossy(&buf[..pos]).to_ascii_lowercase();
+                        let content_length: usize = head
+                            .lines()
+                            .find_map(|l| l.strip_prefix("content-length:"))
+                            .and_then(|v| v.trim().parse().ok())
+                            .unwrap_or(0);
+                        let mut b = buf[pos + 4..].to_vec();
+                        while b.len() < content_length {
+                            let Ok(n) = sock.read(&mut tmp).await else {
+                                return;
+                            };
+                            if n == 0 {
+                                break;
+                            }
+                            b.extend_from_slice(&tmp[..n]);
+                        }
+                        break String::from_utf8_lossy(&b[..content_length]).to_string();
+                    }
+                };
+                captured.lock().unwrap().push(body);
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = sock.write_all(resp.as_bytes()).await;
+                let _ = sock.shutdown().await;
+            }
+        });
+        (format!("http://{addr}"), bodies)
+    }
+
+    /// M1b review round 2 (nit): pin the WIRING, not just the params
+    /// helper — the searched trait method must put
+    /// `searchTransactionHistory: true` on the wire and the hot-poll method
+    /// `false`; swapping the call-site booleans must fail this test.
+    #[tokio::test]
+    async fn trait_methods_send_search_transaction_history_per_contract() {
+        let resp =
+            r#"{"jsonrpc":"2.0","id":1,"result":{"context":{"slot":361000500},"value":[null]}}"#;
+        let (url, bodies) = spawn_capture_server(vec![resp.to_string(), resp.to_string()]).await;
+        let client = DeriverseRpcClient::new(
+            url,
+            crate::common::consts::PROGRAM_ID.to_string(),
+            Commitment::Confirmed,
+            5,
+        )
+        .unwrap();
+        assert!(client.get_signature_status("sigW").await.unwrap().is_none());
+        let (slot, searched) = client.get_signature_status_searched("sigW").await.unwrap();
+        assert_eq!(slot, 361_000_500, "context.slot captured off the wire");
+        assert!(searched.is_none());
+        let b = bodies.lock().unwrap();
+        assert_eq!(b.len(), 2);
+        let hot: Value = serde_json::from_str(&b[0]).unwrap();
+        assert_eq!(hot["method"], "getSignatureStatuses");
+        assert_eq!(hot["params"][1]["searchTransactionHistory"], json!(false));
+        let proving: Value = serde_json::from_str(&b[1]).unwrap();
+        assert_eq!(proving["method"], "getSignatureStatuses");
+        assert_eq!(
+            proving["params"][1]["searchTransactionHistory"],
+            json!(true)
+        );
+    }
+
+    /// M1b review round 3 (nit): pin getEpochInfo's tuple ORDER off the
+    /// wire — a silent absoluteSlot↔blockHeight swap would make both expiry
+    /// gates vacuous at once (heights carrying slot-magnitude values and
+    /// vice versa) with the whole suite green.
+    #[tokio::test]
+    async fn get_epoch_info_tuple_order_is_slot_then_height() {
+        let resp = r#"{"jsonrpc":"2.0","id":1,"result":{"absoluteSlot":360000123,"blockHeight":340000456,"epoch":812,"slotIndex":5,"slotsInEpoch":432000,"transactionCount":0}}"#;
+        let (url, bodies) = spawn_capture_server(vec![resp.to_string()]).await;
+        let client = DeriverseRpcClient::new(
+            url,
+            crate::common::consts::PROGRAM_ID.to_string(),
+            Commitment::Confirmed,
+            5,
+        )
+        .unwrap();
+        let (absolute_slot, block_height) = client.get_epoch_info().await.unwrap();
+        assert_eq!(absolute_slot, 360_000_123, "first element = absoluteSlot");
+        assert_eq!(block_height, 340_000_456, "second element = blockHeight");
+        let b = bodies.lock().unwrap();
+        let req: Value = serde_json::from_str(&b[0]).unwrap();
+        assert_eq!(req["method"], "getEpochInfo");
+    }
+
+    #[test]
+    fn parse_signature_status_reads_row_and_null() {
+        let result = json!({
+            "context": {"slot": 361000500},
+            "value": [{"slot": 361000123, "confirmationStatus": "confirmed", "err": null}],
+        });
+        let s = parse_signature_status(&result).expect("status row");
+        assert_eq!(s.slot, 361_000_123);
+        assert_eq!(s.confirmation_status, "confirmed");
+        assert!(s.err.is_none());
+        let none = json!({"context": {"slot": 361000500}, "value": [null]});
+        assert!(parse_signature_status(&none).is_none());
     }
 }

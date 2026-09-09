@@ -278,3 +278,34 @@ fn scaling_layer_is_kit_identical() {
     let q = nautilus_model::types::Quantity::new(0.033, 9);
     assert_eq!(qty_to_raw(q.as_f64(), 9), 33_000_000);
 }
+
+/// Round-2 review: the wire amount from the raw entry point is the integer
+/// VERBATIM; the display-float path rounds up 1 raw unit at this magnitude
+/// (an oversell for a balance-derived close — the venue rejects, never
+/// clamps).
+#[test]
+fn raw_qty_entry_encodes_wire_exact_where_float_path_overshoots() {
+    use drv_models::instruction_data::NewSpotOrderData;
+    let g = goldens();
+    let ctx = fixture_ctx(&g);
+    let qty_raw = 9_007_199_254_000_000_i64;
+    let args = NewSpotOrderArgs {
+        instr_id: 0,
+        side: 1,
+        ioc: 1,
+        order_type: 0,
+        price: 100.0,
+        qty: qty_raw as f64 / 1e9, // display value (fixture instr 0: 9 decs)
+        edge_price: 0.0,
+    };
+    let ix = builder(&ctx).new_spot_order_ix_raw(&args, qty_raw).unwrap();
+    let data: NewSpotOrderData = bytemuck::pod_read_unaligned(&ix.data);
+    assert_eq!(data.amount.value, qty_raw, "raw path must encode verbatim");
+    let ix_float = builder(&ctx).new_spot_order_ix(&args).unwrap();
+    let data_float: NewSpotOrderData = bytemuck::pod_read_unaligned(&ix_float.data);
+    assert_eq!(
+        data_float.amount.value,
+        qty_raw + 1,
+        "display-float round-trip overshoots here — the reason the raw path exists"
+    );
+}

@@ -84,6 +84,18 @@ struct Registry {
     live: std::collections::HashMap<u64, usize>,    // server sub id → spec idx
 }
 
+impl Registry {
+    /// Specs with neither a live subscription nor an in-flight request —
+    /// newly registered or bounced — that a (re)subscribe pass must send.
+    fn unsubscribed(&self) -> Vec<usize> {
+        (0..self.specs.len())
+            .filter(|idx| {
+                !self.live.values().any(|i| i == idx) && !self.pending.values().any(|i| i == idx)
+            })
+            .collect()
+    }
+}
+
 pub struct DeriverseRpcSubscriptionClient {
     ws_url: String,
     commitment: Commitment,
@@ -198,6 +210,16 @@ impl DeriverseRpcSubscriptionClient {
                                 let _ = socket.close(None).await;
                                 continue 'reconnect;
                             }
+                            // Periodic retry of bounced subscriptions: an
+                            // in-band error reply leaves the spec neither
+                            // live nor pending, and nothing else nudges it
+                            // on a healthy socket (the resubscribe Notify
+                            // only fires on register()). Tick cadence bounds
+                            // the retry rate — no hot loop against a
+                            // persistently bouncing server.
+                            if resend_unsubscribed(&mut socket, &registry, commitment, &mut next_id).await.is_err() {
+                                continue 'reconnect;
+                            }
                         }
                         frame = socket.next() => {
                             match frame {
@@ -265,14 +287,7 @@ async fn resend_unsubscribed(
     commitment: Commitment,
     next_id: &mut u64,
 ) -> anyhow::Result<()> {
-    let todo: Vec<usize> = {
-        let reg = registry.lock().expect("ws registry lock");
-        (0..reg.specs.len())
-            .filter(|idx| {
-                !reg.live.values().any(|i| i == idx) && !reg.pending.values().any(|i| i == idx)
-            })
-            .collect()
-    };
+    let todo: Vec<usize> = registry.lock().expect("ws registry lock").unsubscribed();
     for idx in todo {
         send_subscribe(socket, registry, commitment, next_id, idx).await?;
     }
@@ -294,8 +309,9 @@ fn handle_text(text: &str, registry: &Arc<Mutex<Registry>>) {
         };
         if let Some(err) = v.get("error") {
             // Owned frame class: subscription bounce ⇒ loud error; the spec
-            // survives in the registry, so the next resubscribe nudge or
-            // reconnect retries it.
+            // survives in the registry (neither live nor pending), so the
+            // actor's periodic retry tick — or the next reconnect — resends
+            // it (Registry::unsubscribed selects it).
             log::error!(
                 "deriverse ws subscription bounced (spec {:?}): {err}",
                 reg.specs[idx].kind
@@ -410,6 +426,44 @@ mod tests {
         assert!(reg.live.is_empty());
         drop(reg);
         assert!(rx.try_recv().is_err(), "no notification fabricated");
+    }
+
+    /// M1b gate (#67 item 3): a bounced subscription must be picked up by the
+    /// periodic retry — nothing else nudges it on a healthy socket.
+    #[test]
+    fn bounced_subscription_is_selected_for_periodic_retry() {
+        let (client, _rx) = client_with_account_sub();
+        client.registry.lock().unwrap().pending.insert(1, 0);
+        handle_text(
+            r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"Invalid params"}}"#,
+            &client.registry,
+        );
+        let reg = client.registry.lock().unwrap();
+        assert_eq!(
+            reg.unsubscribed(),
+            vec![0],
+            "bounced spec (neither live nor pending) must be selected for resubscribe"
+        );
+    }
+
+    #[test]
+    fn live_and_pending_specs_are_not_reselected() {
+        let (client, _rx) = client_with_account_sub();
+        {
+            // In-flight request: not reselected (a duplicate would double-subscribe).
+            let mut reg = client.registry.lock().unwrap();
+            reg.pending.insert(1, 0);
+            assert!(reg.unsubscribed().is_empty());
+        }
+        // Confirmed live: not reselected.
+        handle_text(
+            r#"{"jsonrpc":"2.0","id":1,"result":5551}"#,
+            &client.registry,
+        );
+        let reg = client.registry.lock().unwrap();
+        assert!(reg.pending.is_empty());
+        assert_eq!(reg.live.len(), 1);
+        assert!(reg.unsubscribed().is_empty());
     }
 
     #[test]

@@ -3,6 +3,7 @@
 //! tag; discriminator (tag + version) is verified before any field read
 //! (Invariant 7).
 
+pub mod client;
 pub mod instr;
 pub mod logs;
 pub mod token;
