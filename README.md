@@ -103,10 +103,17 @@ Because Deriverse has no gateway, this adapter speaks Solana directly:
 
 The gap worth being explicit about: you can feed Deriverse data into a Nautilus
 strategy today, but calling `submit_order(...)` in that strategy will not send
-an order to Deriverse, because nothing is registered to route it there. Orders
-are currently placed through this crate's own transaction layer and the
-`drv-spot-order` operator binary, outside the Nautilus execution engine. A
+an order to Deriverse, because nothing is registered to route it there. A
 Nautilus `ExecutionClient` is the next milestone.
+
+That gap is in the Nautilus wiring, not in the ability to trade. The
+transaction layer underneath — `tx`, `rpc`, `decode` — is a complete, directly
+usable Rust API in its own right: build an order, sign it, send it, confirm
+it, decode the result, with no Nautilus node involved at all. It is what
+`drv-spot-order` itself calls, and it is what is live-proven on mainnet in the
+status table above. If you want programmatic order placement before the
+`ExecutionClient` lands, call these modules directly — `drv-spot-order`'s
+source is the reference for how.
 
 Verified current as of 2026-09-08 against `drv-models` `v0.2.74` and
 `@deriverse/kit` `1.0.76`.
