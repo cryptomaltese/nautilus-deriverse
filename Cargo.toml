@@ -17,8 +17,9 @@
 # an `Option<Params>` parameter — verified by compiling standalone against
 # crates.io 0.59.0, E0061). In the monorepo, the root workspace's
 # [patch."https://github.com/nautechsystems/nautilus_trader"] redirects these
-# to the pinned vendor checkout under frameworks/ (same rev), so monorepo
-# builds never touch the network. Move to versioned crates.io deps when the
+# to the vendor checkout under frameworks/ (that base plus the carried patches
+# the root README § Vendor checkout lists), so monorepo builds never touch the
+# network. Move to versioned crates.io deps when the
 # pin advances to a released version (v1.229.0+).
 [package]
 name = "nautilus-deriverse"
